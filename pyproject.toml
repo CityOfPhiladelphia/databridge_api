@@ -1,0 +1,11 @@
+[project]
+name = "oit-api-wrapper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiohttp[speedups]>=3.13.3",
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.128.0",
+    "psycopg>=3.3.2",
+]
