@@ -4,6 +4,7 @@ from enum import Enum
 from carto import Carto
 from ago import Ago
 import aiohttp
+from abstract_worker import ReturnData
 
 
 # 1. Create a Manager to hold the session
@@ -49,15 +50,20 @@ async def root(session: aiohttp.ClientSession = Depends(session_manager)):
             "Available Services": [serv.lower() for serv in AVAILABLE_SERVICES.keys()]}
 
 
-@app.get("/get/")
+@app.get("/get")
 async def get(
     table: str,
+    fields: str = None,
     service: Service = None,
     session: aiohttp.ClientSession = Depends(session_manager),
-): 
+) -> ReturnData: 
     if not service: 
         return 'Not Accessing a Service!'
     else: 
         api = AVAILABLE_SERVICES[service.lower()]
-        rv = await api.get(session, table)
+        if fields: 
+            field_list = [field.strip() for field in fields.split(",")]
+        else: 
+            field_list = None
+        rv = await api.get(table, field_list, session)
         return rv

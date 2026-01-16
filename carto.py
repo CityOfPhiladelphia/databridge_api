@@ -1,6 +1,6 @@
 from abstract_worker import AbstractWorker, ReturnData
 import aiohttp
-from psycopg import sql
+from psycopg import sql # Carto uses PostgreSQL database as its backend
 
 
 class Carto(AbstractWorker): 
@@ -9,8 +9,17 @@ class Carto(AbstractWorker):
         self.name = 'Carto'
         self.base_url = "https://phl.carto.com/api/v2/sql"
 
-    async def get(self, session: aiohttp.ClientSession, table: str): 
-        query = sql.SQL('SELECT * FROM {table} LIMIT 1').format(
+    async def get(
+        self, table: str, field_list: list[str] | None, session: aiohttp.ClientSession
+    ) -> ReturnData:
+        if field_list: 
+            select = sql.SQL('SELECT')
+            join_list = sql.SQL(', ').join([sql.Identifier(field) for field in field_list])
+            select += join_list
+        else: 
+            select = sql.SQL('SELECT *')
+
+        query = select + sql.SQL('FROM {table} LIMIT 1').format(
             table = sql.Identifier(table)
         )
         
@@ -19,7 +28,7 @@ class Carto(AbstractWorker):
         async with session.get(url, params=params) as response:
             return await self.normalize_rv(response)
 
-    async def normalize_rv(self, response: aiohttp.ClientResponse):
+    async def normalize_rv(self, response: aiohttp.ClientResponse) -> ReturnData:
         query = str(response.url)
         data = await response.json()
         records = data['rows']

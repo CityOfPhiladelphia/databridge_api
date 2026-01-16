@@ -1,20 +1,11 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-import json 
+from pydantic import BaseModel
 
-
-class ReturnData(): 
-    def __init__(self, query: str, total_records: int, records: list = []): 
-        self.query = query
-        self.total_records = total_records
-        self.records = records
-    
-    def to_json(self): 
-        return json.dump({
-            'query': self.query, 
-            'total_records': self.total_records, 
-            'records': self.records, 
-        })
+class ReturnData(BaseModel):
+    query: str
+    total_records: int
+    records: list[dict]
 
 
 class AbstractWorker(ABC): 
