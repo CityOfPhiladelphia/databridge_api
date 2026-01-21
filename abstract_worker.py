@@ -3,10 +3,16 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
 class ReturnData(BaseModel):
+    service: str
     query: str
     total_records: int
     records: list[dict]
 
+class ReturnError(BaseModel): 
+    service: str
+    query: str
+    error_code: int
+    error_message: str
 
 class AbstractWorker(ABC): 
     """Abstract base class to ensure worker classes are properly implemented
