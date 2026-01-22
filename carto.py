@@ -12,33 +12,32 @@ class Carto(AbstractWorker):
     async def get(
         self,
         table: str | None,
-        field_list: list[str] | None,
+        fields: str | None,
         where: str | None,
         limit: int | None, 
         sql: str | None,
         session: aiohttp.ClientSession,
+        **kwargs
     ) -> ReturnData | ReturnError:
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
         if not sql: 
-            if field_list: 
-                q_select = psql.SQL('SELECT')
+            if fields: 
+                q_select = psql.SQL('SELECT ')
+                field_list = [field.strip() for field in fields.split(",")]
                 fields_composed = psql.SQL(', ').join([psql.Identifier(field) for field in field_list])
                 q_select += fields_composed
             else: 
                 q_select = psql.SQL('SELECT *')
 
-            q_from = psql.SQL('FROM {table}').format(table=psql.Identifier(table))
-            query = psql.SQL(' ').join([q_select, q_from])
+            q_from = psql.SQL(' FROM {table} ').format(table=psql.Identifier(table))
+            query = q_select + q_from
             if where: 
-                q_where = psql.SQL(f'WHERE {where}')
-                query = psql.SQL(' ').join([query, q_where])
-            print(f'limit = "{limit}"')
+                q_where = psql.SQL(f'WHERE {where} ')
+                query = query + q_where
             if limit is not None: 
-                print(f'limit = "{limit}"')
-                q_limit = psql.SQL('LIMIT {limit}').format(limit=psql.Literal(limit))
-                print(f'{q_limit.as_string() = }')
-                query = psql.SQL(' ').join([query, q_limit])
+                q_limit = psql.SQL('LIMIT {limit} ').format(limit=psql.Literal(limit))
+                query = query + q_limit
         else: 
             query = psql.SQL(sql)
         url = f'{self.base_url}'
@@ -53,12 +52,14 @@ class Carto(AbstractWorker):
         query = str(response.url)
         data = await response.json()
         service = self.name
+        available_parameters = self.determine_function_params(self.get)
         if response.ok: 
             records = data['rows']
             total_records = data['total_rows']
             rv = ReturnData(
                 service=service,
-                query=query,
+                url=query,
+                service_available_query_parameters=available_parameters,
                 records=records,
                 total_records=total_records,
             )

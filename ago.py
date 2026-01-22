@@ -1,7 +1,6 @@
 from abstract_worker import AbstractWorker, ReturnData, ReturnError
 import aiohttp
 
-
 class Ago(AbstractWorker):
     
     def __init__(self):
@@ -12,22 +11,20 @@ class Ago(AbstractWorker):
     async def get(
         self,
         table: str | None,
-        field_list: list[str] | None,
+        fields: str | None,
         where: str | None,
         limit: int | None, 
-        sql: str | None,
         session: aiohttp.ClientSession,
+        **kwargs
     ) -> ReturnData | ReturnError:
-        # These queries on their own are unsafe, but we are relying on the safety 
-        # checks of the back-end APIs
         url = f'{self.organization_url}{table}{self.query_url}'
         if not where: 
             where = '1=1'
-        if not field_list: 
-            out_fields = '*'
+        if not fields: 
+            fields = '*'
         params = {
             'where': where, 
-            'outFields': out_fields, 
+            'outFields': fields, 
             'f': 'json'
         }
         async with session.get(url, params=params) as response:
@@ -42,9 +39,11 @@ class Ago(AbstractWorker):
         if response.ok: 
             records = data['features']
             total_records = len(records)
+            available_parameters = self.determine_function_params(self.get)
             rv = ReturnData(
                 service=service,
-                query=query,
+                url=query,
+                service_available_query_parameters=available_parameters, 
                 records=records,
                 total_records=total_records,
             )
