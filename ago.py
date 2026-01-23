@@ -36,15 +36,24 @@ class Ago(AbstractWorker):
         query = str(response.url)
         data = await response.json()
         service = self.name
-        if response.ok: 
+        # AGO REST API doesn't respect HTTP status codes
+        print(f'{data = }')
+        if 'features' in data: 
             records = data['features']
             total_records = len(records)
-            available_parameters = self.determine_function_params(self.get)
             rv = ReturnData(
                 service=service,
                 url=query,
-                service_available_query_parameters=available_parameters, 
                 records=records,
                 total_records=total_records,
+            )
+            return rv
+        elif 'error' in data: 
+            rv = ReturnError(
+                service=service, 
+                url=query, 
+                error_code=data['error']['code'], 
+                error_message=data['error']['message'], 
+                error_details=data['error']['details'][0]
             )
             return rv

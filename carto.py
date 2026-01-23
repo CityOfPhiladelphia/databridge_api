@@ -42,7 +42,6 @@ class Carto(AbstractWorker):
             query = psql.SQL(sql)
         url = f'{self.base_url}'
         params = {'q': query.as_string()}
-        print(f'{query.as_string() = }')
         async with session.get(url, params=params) as response:
             return await self.normalize_rv(response)
 
@@ -52,14 +51,12 @@ class Carto(AbstractWorker):
         query = str(response.url)
         data = await response.json()
         service = self.name
-        available_parameters = self.determine_function_params(self.get)
         if response.ok: 
             records = data['rows']
             total_records = data['total_rows']
             rv = ReturnData(
                 service=service,
                 url=query,
-                service_available_query_parameters=available_parameters,
                 records=records,
                 total_records=total_records,
             )
@@ -68,7 +65,7 @@ class Carto(AbstractWorker):
             msg = data['error'][0]
             rv = ReturnError(
                 service=service,
-                query=query,
+                url=query,
                 error_code=response.status,
                 error_message=msg,
             )
