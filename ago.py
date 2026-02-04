@@ -22,9 +22,12 @@ class Ago(AbstractWorker):
             where = '1=1'
         if not fields: 
             fields = '*'
+        if not limit: 
+            limit = ''
         params = {
             'where': where, 
             'outFields': fields, 
+            'resultRecordCount': limit,
             'f': 'json'
         }
         async with session.get(url, params=params) as response:
@@ -37,7 +40,6 @@ class Ago(AbstractWorker):
         data = await response.json()
         service = self.name
         # AGO REST API doesn't respect HTTP status codes
-        print(f'{data = }')
         if 'features' in data: 
             records = data['features']
             total_records = len(records)
