@@ -37,7 +37,7 @@ class AbstractWorker(ABC):
         raise NotImplementedError
 
     def determine_function_params(self, func: Callable) -> list[str]: 
-        """Determine the parameters used in a function so as document which query 
+        """Determine the parameters used in a function so as to document which query 
         parameters are accepted by each particular API service
 
         Args:

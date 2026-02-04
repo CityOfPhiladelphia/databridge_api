@@ -36,6 +36,14 @@ for api in AVAILABLE_SERVICES.values():
     SERVICE_PARAMETERS[api] = api.determine_function_params(api.get)
 
 
+def make_param_api_descriptions(param: str) -> str: 
+    s = []
+    for api in SERVICE_PARAMETERS: 
+        if param in SERVICE_PARAMETERS[api]: 
+            s.append(api.name)
+    return "\n\n_Used by:_ " + ", ".join(s)
+
+
 class Service(str, Enum): 
     AGO = 'ago'
     CARTO = 'carto'
@@ -67,49 +75,37 @@ async def root() -> dict[str, list[str]]:
     }
 
 
-def generate_get_description() -> str: 
-    r'''Programmatically generate the API description for the `\get` endpoint to show 
-    only the available query parameters for each service'''
-
-    description = 'Use this endpoint to retrieve data from the available services. To select an API service pass the query parameter `service=<service>`, otherwise the first API service to locate the table will be used.'
-    description += '\n\nUse the following query parameters to refine the data retrieved:'
-    for service in AVAILABLE_SERVICES.values(): 
-        service_string = f'''**{service.name}**'''
-        for param in service.determine_function_params(func=service.get): 
-            service_string += f'\n\n- {param}'
-        description += f'\n\n{service_string}'
-    description += '\n\nParameters not relevant to a specific service will be ignored'
-    return description
-
-
-@app.get("/get", description=generate_get_description())
+@app.get("/get")
 async def get_data(
     table: Annotated[
         str | None,
         Query(
-            description="Name of table to retrieve. Not used if `sql` parameter is provided instead."
+            description=f"Name of table to retrieve. Not used if `sql` parameter is provided instead.{make_param_api_descriptions('table')}"
         ),
     ] = None,
     fields: Annotated[
         str | None,
         Query(
-            description="List of fields to retrieve, taking the form _field_1_,_field_2_,... Not used if `sql` parameter is provided instead."
+            description=f"List of fields to retrieve, taking the form _field_1_,_field_2_,... Not used if `sql` parameter is provided instead.{make_param_api_descriptions('fields')}"
         ),
     ] = None,
     where: Annotated[
         str | None,
         Query(
-            description="An SQL _WHERE_ clause to filter data. Not used if `sql` parameter is provided instead."
+            description=f"An SQL _WHERE_ clause to filter data. Not used if `sql` parameter is provided instead.{make_param_api_descriptions('where')}"
         ),
     ] = None,
     limit: Annotated[
         int | None,
         Query(
-            description="Limit to the number of records to return. Not used if `sql` parameter is provided instead."
+            description=f"Limit to the number of records to return. Not used if `sql` parameter is provided instead.{make_param_api_descriptions('limit')}"
         ),
     ] = None,
     sql: Annotated[
-        str | None, Query(description="Raw SQL string to use when retrieving data.")
+        str | None,
+        Query(
+            description=f"Raw SQL string to use when retrieving data.{make_param_api_descriptions('sql')}"
+        ),
     ] = None,
     service: Annotated[
         Service | None,
@@ -119,9 +115,10 @@ async def get_data(
     ] = None,
     session: aiohttp.ClientSession = Depends(session_manager),
 ) -> ReturnData | ReturnError: 
-    '''This is the main endpoint for retrieving data, but this docstring will be 
-    overwriten by FastAPI via the `description` parameter and `generate_get_description()` 
-    function above'''
+    """Use this endpoint to retrieve data from the available
+    services. To select an API service, pass the query parameter `service=<service>`,
+    otherwise the first API service to locate the table will be used.
+    \nParameters not relevant to a specific service will be ignored."""
     if not service: 
         return 'Not Accessing a Service!'
     else: 
