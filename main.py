@@ -30,16 +30,16 @@ class SessionManager:
 session_manager = SessionManager()
 carto = Carto()
 ago = Ago()
-AVAILABLE_SERVICES = {'ago': ago, 'carto': carto}
-SERVICE_PARAMETERS = {}
-for api in AVAILABLE_SERVICES.values(): 
-    SERVICE_PARAMETERS[api] = api.determine_function_params(api.get)
+MAP_STR_TO_API = {'ago': ago, 'carto': carto} # Note this is the order searched if no API is specified. 
+MAP_API_TO_PARAMS = {}
+for api in MAP_STR_TO_API.values(): 
+    MAP_API_TO_PARAMS[api] = api.determine_function_params(api.get)
 
 
 def make_param_api_descriptions(param: str) -> str: 
     s = []
-    for api in SERVICE_PARAMETERS: 
-        if param in SERVICE_PARAMETERS[api]: 
+    for api in MAP_API_TO_PARAMS: 
+        if param in MAP_API_TO_PARAMS[api]: 
             s.append(api.name)
     return "\n\n_Used by:_ " + ", ".join(s)
 
@@ -114,15 +114,30 @@ async def get_data(
         ),
     ] = None,
     session: aiohttp.ClientSession = Depends(session_manager),
-) -> ReturnData | ReturnError: 
+) -> ReturnData | ReturnError | list[ReturnError]: 
     """Use this endpoint to retrieve data from the available
     services. To select an API service, pass the query parameter `service=<service>`,
     otherwise the first API service to locate the table will be used.
     \nParameters not relevant to a specific service will be ignored."""
     if not service: 
-        return 'Not Accessing a Service!'
+        return_errors = []
+        for api in MAP_API_TO_PARAMS:
+            rv = await api.get(
+                table=table,
+                fields=fields,
+                where=where,
+                limit=limit,
+                sql=sql,
+                session=session,
+            )
+            rv.service_available_query_parameters = MAP_API_TO_PARAMS[api]
+            if isinstance(rv, ReturnData): 
+                return rv
+            elif isinstance(rv, ReturnError):
+                return_errors.append(rv.model_dump(mode="json"))
+        return JSONResponse(status_code=rv.error_code, content=return_errors)
     else: 
-        api = AVAILABLE_SERVICES[service.lower()]
+        api = MAP_STR_TO_API[service.lower()]
         rv = await api.get(
             table=table,
             fields=fields,
@@ -131,7 +146,7 @@ async def get_data(
             sql=sql,
             session=session,
         )
-        rv.service_available_query_parameters = SERVICE_PARAMETERS[api]
+        rv.service_available_query_parameters = MAP_API_TO_PARAMS[api]
         if isinstance(rv, ReturnData): 
             return rv
         elif isinstance(rv, ReturnError): 
