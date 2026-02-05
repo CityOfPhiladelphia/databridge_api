@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, Query
+from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from enum import Enum
@@ -77,34 +77,41 @@ async def root() -> dict[str, list[str]]:
 
 @app.get("/get")
 async def get_data(
+    request: Request, 
     table: Annotated[
         str | None,
         Query(
-            description=f"Name of table to retrieve. Not used if `sql` parameter is provided instead.{make_param_api_descriptions('table')}"
+            description=f"Name of table to retrieve. Not used if `sql` parameter is provided.{make_param_api_descriptions('table')}"
         ),
     ] = None,
     fields: Annotated[
         str | None,
         Query(
-            description=f"List of fields to retrieve, taking the form _field_1_,_field_2_,... Not used if `sql` parameter is provided instead.{make_param_api_descriptions('fields')}"
+            description=f"List of fields to retrieve, taking the form _field_1_,_field_2_,... Not used if `sql` or `count_only` parameters are provided.{make_param_api_descriptions('fields')}"
         ),
     ] = None,
     where: Annotated[
         str | None,
         Query(
-            description=f"An SQL _WHERE_ clause to filter data. Not used if `sql` parameter is provided instead.{make_param_api_descriptions('where')}"
+            description=f"An SQL _WHERE_ clause to filter data. Not used if `sql` parameter is provided.{make_param_api_descriptions('where')}"
         ),
     ] = None,
     limit: Annotated[
         int | None,
         Query(
-            description=f"Limit to the number of records to return. Not used if `sql` parameter is provided instead.{make_param_api_descriptions('limit')}"
+            description=f"Limit to the number of records to return. Not used if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions('limit')}"
+        ),
+    ] = None,
+    count_only: Annotated[
+        bool | None,
+        Query(
+            description=f"Return record count of provided query. Not used if `sql` parameter is provided.{make_param_api_descriptions('count_only')}"
         ),
     ] = None,
     sql: Annotated[
         str | None,
         Query(
-            description=f"Raw SQL string to use when retrieving data.{make_param_api_descriptions('sql')}"
+            description=f"Raw SQL string to use when retrieving data. Not used if `count_only` parmater is provided.{make_param_api_descriptions('sql')}"
         ),
     ] = None,
     service: Annotated[
@@ -119,17 +126,23 @@ async def get_data(
     services. To select an API service, pass the query parameter `service=<service>`,
     otherwise the first API service to locate the table will be used.
     \nParameters not relevant to a specific service will be ignored."""
+    params = {
+        'table': table,
+        'fields': fields,
+        'where': where,
+        'limit': limit,
+        'count_only': count_only, 
+        'sql': sql,
+        'session': session,
+        'request': request, 
+    }
     if not service: 
         return_errors = []
         for api in MAP_API_TO_PARAMS:
-            rv = await api.get(
-                table=table,
-                fields=fields,
-                where=where,
-                limit=limit,
-                sql=sql,
-                session=session,
-            )
+            if count_only: 
+                rv = await api.get_count(**params)
+            else: 
+                rv = await api.get(**params)
             rv.service_available_query_parameters = MAP_API_TO_PARAMS[api]
             if isinstance(rv, ReturnData): 
                 return rv
@@ -138,14 +151,10 @@ async def get_data(
         return JSONResponse(status_code=rv.error_code, content=return_errors)
     else: 
         api = MAP_STR_TO_API[service.lower()]
-        rv = await api.get(
-            table=table,
-            fields=fields,
-            where=where,
-            limit=limit,
-            sql=sql,
-            session=session,
-        )
+        if count_only: 
+            rv = await api.get_count(**params)
+        else: 
+            rv = await api.get(**params)
         rv.service_available_query_parameters = MAP_API_TO_PARAMS[api]
         if isinstance(rv, ReturnData): 
             return rv
