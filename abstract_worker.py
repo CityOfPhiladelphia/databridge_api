@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from fastapi import Request
 import inspect
 import functools
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 
 class ReturnData(BaseModel):
     service: str
@@ -66,14 +66,11 @@ class AbstractWorker(ABC):
             if param not in ('session', 'kwargs'): 
                 available_parameters.append(param)
         return available_parameters
-
-    def generate_objectids(self, data: list[dict], fields: list[str]) -> Generator[int]: 
-        for row in data: 
-            yield functools.reduce(dict.get, fields, row)
     
     def get_data_max_objectid(self, data: list[dict], fields: list[str]) -> int: 
         max_objectid = 0
-        for objectid in self.generate_objectids(data, fields): 
+        for row in data:
+            objectid = functools.reduce(dict.get, fields, row)
             max_objectid = max(objectid, max_objectid)
         return max_objectid
     
