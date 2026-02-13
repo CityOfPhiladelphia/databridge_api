@@ -37,6 +37,14 @@ for api in MAP_STR_TO_API.values():
 
 
 def make_param_api_descriptions(param: str) -> str: 
+    """Create the description line noting for each query parameter which APIs accept it
+
+    Args:
+        param (str): Query parameter
+
+    Returns:
+        str: Markdown-compatible description taking the form "Used by: AGO, Carto, ..."
+    """    
     s = []
     for api in MAP_API_TO_PARAMS: 
         if param in MAP_API_TO_PARAMS[api]: 
@@ -75,7 +83,7 @@ async def root() -> dict[str, list[str]]:
     }
 
 
-@app.get("/get", response_model=ReturnJson)
+@app.get("/get", response_model=ReturnJson, response_model_exclude_none=True)
 async def get_data(
     request: Request, 
     table: Annotated[

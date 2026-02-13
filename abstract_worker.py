@@ -83,6 +83,15 @@ class AbstractWorker(ABC):
         return available_parameters
     
     def get_data_max_objectid(self, data: list[dict], fields: list[str]) -> int: 
+        """Get the max "objectid" present in the data
+
+        Args:
+            data (list[dict]): Data records
+            fields (list[str]): List of keys to find the object id, proceeding depth-first
+
+        Returns:
+            int: Largest objectid present in this data batch
+        """        
         max_objectid = 0
         for row in data:
             objectid = functools.reduce(dict.get, fields, row)
@@ -90,6 +99,16 @@ class AbstractWorker(ABC):
         return max_objectid
     
     def create_next_url(self, records: list[dict], request: Request) -> str:
+        """Create the url to access the next "page" of data, preserving any existing 
+        WHERE clause
+
+        Args:
+            records (list[dict]): Data records
+            request (Request): User request to this API
+
+        Returns:
+            str: URL to access the next page of data
+        """        
         old_url = request.url
         old_where = request.query_params.get("where")
         next_where = self.create_next_where_clause(records)
