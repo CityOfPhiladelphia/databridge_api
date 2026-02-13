@@ -1,4 +1,4 @@
-from abstract_worker import AbstractWorker, ReturnData, ReturnError
+from abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error
 import aiohttp
 from fastapi import Request
 
@@ -16,7 +16,7 @@ class Ago(AbstractWorker):
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,  # Do not remove
-    ) -> ReturnData | ReturnError:
+    ) -> ReturnJson:
         url = f'{self.organization_url}{table}{self.query_url}'
         if not where: 
             where = '1=1'
@@ -30,31 +30,22 @@ class Ago(AbstractWorker):
 
     async def normalize_rv_count(
         self, request: Request, response: aiohttp.ClientResponse
-    ) -> ReturnData | ReturnError:
-        url = str(request.url)
-        api_url = str(response.url)
+    ) -> ReturnJson:
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
-        service = self.name
         # AGO REST API doesn't respect HTTP status codes
         if 'error' not in data: 
-            records = []
-            total_records = data['count']
-            rv = ReturnData(
-                service=service,
-                url=url,
-                api_url=api_url,
-                records=records,
-                record_count=total_records,
-            )
+            meta.record_count = data['count']
+            rv = ReturnJson(links=links, meta=meta)
             return rv
         else: 
-            rv = ReturnError(
-                service=service, 
-                url=url, 
-                error_code=data['error']['code'], 
-                error_message=data['error']['message'], 
-                error_details=data['error']['details'][0]
+            error = Error(
+                code=data["error"]["code"],
+                title=f"{self.name} Error: {data['error']['message']}",
+                detail=data['error']['details'][0],
             )
+            rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
     # Do not remove any unused parameters as they are crucial to the documentation
@@ -68,7 +59,7 @@ class Ago(AbstractWorker):
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
-    ) -> ReturnData | ReturnError:
+    ) -> ReturnJson:
         url = f'{self.organization_url}{table}{self.query_url}'
         if not where: 
             where = '1=1'
@@ -89,37 +80,26 @@ class Ago(AbstractWorker):
 
     async def normalize_rv(
         self, request: Request, response: aiohttp.ClientResponse
-    ) -> ReturnData | ReturnError:
-        url = str(request.url)
-        api_url = str(response.url)
+    ) -> ReturnJson:
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
-        service = self.name
         # AGO REST API doesn't respect HTTP status codes
         if 'features' in data: 
             records = data['features']
-            total_records = len(records)
+            meta.record_count=len(records)
             if 'exceededTransferLimit' in data: 
                 next_url = self.create_next_url(records, request)
-            else: 
-                next_url = ''
-            rv = ReturnData(
-                service=service,
-                url=url,
-                next_url=next_url,
-                api_url=api_url,
-                records=records,
-                record_count=total_records,
-            )
+                links.next=next_url
+            rv = ReturnJson(data=records, links=links, meta=meta)
             return rv
         elif 'error' in data: 
-            rv = ReturnError(
-                service=service, 
-                url=url, 
-                api_url=api_url,
-                error_code=data['error']['code'], 
-                error_message=data['error']['message'], 
-                error_details=data['error']['details'][0]
+            error = Error(
+                code=data['error']['code'], 
+                title=f'{self.name} Error: {data['error']['message']}', 
+                detail=data['error']['details'][0]
             )
+            rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
     def create_next_where_clause(self, data: list[dict]) -> str: 

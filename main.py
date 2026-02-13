@@ -5,7 +5,7 @@ from enum import Enum
 from carto import Carto
 from ago import Ago
 import aiohttp
-from abstract_worker import ReturnData, ReturnError
+from abstract_worker import AbstractWorker, ReturnJson, Links
 from typing import Annotated
 
 
@@ -30,8 +30,8 @@ class SessionManager:
 session_manager = SessionManager()
 carto = Carto()
 ago = Ago()
-MAP_STR_TO_API = {'ago': ago, 'carto': carto} # Note this is the order searched if no API is specified. 
-MAP_API_TO_PARAMS = {}
+MAP_STR_TO_API: dict[str, AbstractWorker] = {'ago': ago, 'carto': carto} # Note this is the order searched if no API is specified. 
+MAP_API_TO_PARAMS: dict[AbstractWorker, list[str]] = {}
 for api in MAP_STR_TO_API.values(): 
     MAP_API_TO_PARAMS[api] = api.determine_function_params(api.get)
 
@@ -75,7 +75,7 @@ async def root() -> dict[str, list[str]]:
     }
 
 
-@app.get("/get")
+@app.get("/get", response_model=ReturnJson)
 async def get_data(
     request: Request, 
     table: Annotated[
@@ -121,7 +121,7 @@ async def get_data(
         ),
     ] = None,
     session: aiohttp.ClientSession = Depends(session_manager),
-) -> ReturnData | ReturnError | list[ReturnError]: 
+) -> ReturnJson: 
     """Use this endpoint to retrieve data from the available
     services. To select an API service, pass the query parameter `service=<service>`,
     otherwise the first API service to locate the table will be used.
@@ -137,27 +137,35 @@ async def get_data(
         'request': request, 
     }
     if not service: 
-        return_errors = []
+        links = Links(self=str(request.url))
+        rv_combined = ReturnJson(links=links, errors=[])
         for api in MAP_API_TO_PARAMS:
             if count_only: 
                 rv = await api.get_count(**params)
             else: 
                 rv = await api.get(**params)
-            rv.service_available_query_parameters = MAP_API_TO_PARAMS[api]
-            if isinstance(rv, ReturnData): 
+            if not rv.errors: 
+                rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
                 return rv
-            elif isinstance(rv, ReturnError):
-                return_errors.append(rv.model_dump(mode="json"))
-        return JSONResponse(status_code=rv.error_code, content=return_errors)
+            else:
+                rv_combined.errors.append(rv.errors[0])
+        response = JSONResponse(
+            status_code=rv.errors[0].code,
+            content=rv_combined.model_dump(mode="json", exclude_none=True),
+        )
+        return response
     else: 
         api = MAP_STR_TO_API[service.lower()]
         if count_only: 
             rv = await api.get_count(**params)
         else: 
             rv = await api.get(**params)
-        rv.service_available_query_parameters = MAP_API_TO_PARAMS[api]
-        if isinstance(rv, ReturnData): 
+        rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
+        if not rv.errors:
             return rv
-        elif isinstance(rv, ReturnError): 
-            rv = JSONResponse(status_code=rv.error_code, content=rv.model_dump(mode='json'))
+        else:
+            rv = JSONResponse(
+                status_code=rv.errors[0].code,
+                content=rv.model_dump(mode="json", exclude_none=True),
+            )
             return rv

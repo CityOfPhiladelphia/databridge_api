@@ -1,29 +1,44 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from fastapi import Request
 import inspect
 import functools
 from collections.abc import Callable
 
-class ReturnData(BaseModel):
-    service: str
-    service_available_query_parameters: list[str] = None
-    url: str
-    next_url: str = None
-    api_url: str
-    record_count: int
-    records: list[dict]
+class GeoJsonFeature(BaseModel): 
+    pass
 
 
-class ReturnError(BaseModel): 
+class GeoJsonFeatureCollection(BaseModel): 
+    pass
+
+
+class Error(BaseModel): 
+    code: int
+    title: str = None
+    detail: str = None
+
+
+class Links(BaseModel, validate_assignment=True): 
+    self: HttpUrl
+    next: HttpUrl = None
+
+
+class Meta(BaseModel, validate_assignment=True): 
     service: str
+    service_url: HttpUrl
     service_available_query_parameters: list[str] = None
-    url: str
-    api_url: str
-    error_code: int
-    error_message: str
-    error_details: str | None = None
+    record_count: int = None
+    records_total: int = None
+
+
+class ReturnJson(BaseModel, validate_assignment=True): 
+    # All these should be their own models
+    data: list[dict] = None # Either data or errors should be returned
+    errors: list[Error] = None
+    links: Links
+    meta: Meta = None
 
 
 class AbstractWorker(ABC): 
@@ -34,19 +49,19 @@ class AbstractWorker(ABC):
         pass
 
     @abstractmethod
-    async def get_count(self): 
+    async def get_count(self) -> ReturnJson: 
         raise NotImplementedError
 
     @abstractmethod
-    async def normalize_rv_count(self): 
+    async def normalize_rv_count(self) -> ReturnJson: 
         raise NotImplementedError
 
     @abstractmethod
-    async def get(self): 
+    async def get(self) -> ReturnJson: 
         raise NotImplementedError
     
     @abstractmethod
-    async def normalize_rv(data):
+    async def normalize_rv(data) -> ReturnJson:
         raise NotImplementedError
 
     def determine_function_params(self, func: Callable) -> list[str]: 

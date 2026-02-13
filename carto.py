@@ -1,4 +1,4 @@
-from abstract_worker import AbstractWorker, ReturnData, ReturnError
+from abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error
 import aiohttp
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
@@ -18,7 +18,7 @@ class Carto(AbstractWorker):
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,  # Do not remove
-    ) -> ReturnData | ReturnError:
+    ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
         q_select = psql.SQL('SELECT COUNT(*)')
@@ -33,30 +33,21 @@ class Carto(AbstractWorker):
 
     async def normalize_rv_count(
         self, request: Request, response: aiohttp.ClientResponse
-    ) -> ReturnData | ReturnError:
-        url = str(request.url)
-        api_url = str(response.url)
+    ) -> ReturnJson:
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
-        service = self.name
         if response.ok:
-            records = []
-            total_records = data["rows"][0]["count"]
-            rv = ReturnData(
-                service=service,
-                url=url, 
-                api_url=api_url,
-                records=records,
-                record_count=total_records,
-            )
+            meta.record_count = data["rows"][0]["count"]
+            rv = ReturnJson(links=links, meta=meta)
             return rv
         else:
-            msg = data["error"][0]
-            rv = ReturnError(
-                service=service,
-                url=api_url,
-                error_code=response.status,
-                error_message=msg,
+            error = Error(
+                code=response.status,
+                title=f"{self.name} Error",
+                detail=data["error"][0],
             )
+            rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
     # Do not remove any unused parameters as they are crucial to the documentation
@@ -71,7 +62,7 @@ class Carto(AbstractWorker):
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
-    ) -> ReturnData | ReturnError:
+    ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
         if not sql: 
@@ -103,35 +94,25 @@ class Carto(AbstractWorker):
 
     async def normalize_rv(
         self, request: Request, response: aiohttp.ClientResponse, limit: int
-    ) -> ReturnData | ReturnError:
-        url=str(request.url)
-        api_url = str(response.url)
+    ) -> ReturnJson:
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
-        service = self.name
         if response.ok: 
             records = data['rows']
-            record_count = data['total_rows']
-            if record_count == limit:
+            meta.record_count = data['total_rows']
+            if meta.record_count == limit:
                 next_url = self.create_next_url(records, request)
-            else:
-                next_url = ""
-            rv = ReturnData(
-                service=service,
-                url=url, 
-                next_url=next_url,
-                api_url=api_url,
-                records=records,
-                record_count=record_count,
-            )
+                links.next = next_url
+            rv = ReturnJson(data=records, links=links, meta=meta)
             return rv
         else: 
-            msg = data['error'][0]
-            rv = ReturnError(
-                service=service,
-                url=api_url,
-                error_code=response.status,
-                error_message=msg,
+            error = Error(
+                code=response.status,
+                title=f"{self.name} Error",
+                detail=data["error"][0],
             )
+            rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
     def create_next_where_clause(self, data: list[dict]) -> str:
