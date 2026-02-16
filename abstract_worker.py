@@ -6,12 +6,21 @@ import inspect
 import functools
 from collections.abc import Callable
 
+
+class GeoJsonGeometry(BaseModel): 
+    type: str
+    coordinates: list
+
+
 class GeoJsonFeature(BaseModel): 
-    pass
+    type: str = 'Feature'
+    properties: dict
+    geometry: GeoJsonGeometry = None
 
 
 class GeoJsonFeatureCollection(BaseModel): 
-    pass
+    type: str = 'FeatureCollection'
+    features: list[GeoJsonFeature]
 
 
 class Error(BaseModel): 
@@ -34,8 +43,7 @@ class Meta(BaseModel, validate_assignment=True):
 
 
 class ReturnJson(BaseModel, validate_assignment=True): 
-    # All these should be their own models
-    data: list[dict] = None # Either data or errors should be returned
+    data: GeoJsonFeatureCollection = None # Either data or errors should be returned
     errors: list[Error] = None
     links: Links
     meta: Meta = None
@@ -97,6 +105,18 @@ class AbstractWorker(ABC):
             objectid = functools.reduce(dict.get, fields, row)
             max_objectid = max(objectid, max_objectid)
         return max_objectid
+    
+    def create_next_where_clause(self, data: list[dict]) -> str: 
+        """Create the WHERE clause to be used in the NEXT url link to retrieve 
+        the next set of data. Implementation is API-specific
+
+        Args:
+            data (list[dict]): Data records
+
+        Returns:
+            str: WHERE clause restricting the data to be retrieved
+        """        
+        raise NotImplementedError
     
     def create_next_url(self, records: list[dict], request: Request) -> str:
         """Create the url to access the next "page" of data, preserving any existing 

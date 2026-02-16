@@ -148,10 +148,7 @@ async def get_data(
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
         for api in MAP_API_TO_PARAMS:
-            if count_only: 
-                rv = await api.get_count(**params)
-            else: 
-                rv = await api.get(**params)
+            rv = await api.get(**params)
             if not rv.errors: 
                 rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
                 return rv
@@ -164,10 +161,7 @@ async def get_data(
         return response
     else: 
         api = MAP_STR_TO_API[service.lower()]
-        if count_only: 
-            rv = await api.get_count(**params)
-        else: 
-            rv = await api.get(**params)
+        rv = await api.get(**params)
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
         if not rv.errors:
             return rv

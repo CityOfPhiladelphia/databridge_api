@@ -1,4 +1,4 @@
-from abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error
+from abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 import aiohttp
 from fastapi import Request
 
@@ -15,15 +15,12 @@ class Ago(AbstractWorker):
         where: str | None,
         session: aiohttp.ClientSession,
         request: Request,
-        **kwargs,  # Do not remove
     ) -> ReturnJson:
         url = f'{self.organization_url}{table}{self.query_url}'
-        if not where: 
-            where = '1=1'
         params = {
             "where": where,
             "returnCountOnly": 'true', 
-            "f": "json",
+            "f": "geojson",
         }
         async with session.get(url, params=params) as response:
             return await self.normalize_rv_count(request, response)
@@ -36,7 +33,7 @@ class Ago(AbstractWorker):
         data = await response.json()
         # AGO REST API doesn't respect HTTP status codes
         if 'error' not in data: 
-            meta.record_count = data['count']
+            meta.record_count = data['properties']['count']
             rv = ReturnJson(links=links, meta=meta)
             return rv
         else: 
@@ -63,6 +60,9 @@ class Ago(AbstractWorker):
         url = f'{self.organization_url}{table}{self.query_url}'
         if not where: 
             where = '1=1'
+        if count_only: 
+            return await self.get_count(table, where, session, request)
+        
         if not fields: 
             fields = '*'
         else: 
@@ -71,7 +71,7 @@ class Ago(AbstractWorker):
             "where": where,
             "outFields": fields,
             "orderByFields": 'objectid', 
-            "f": "json",
+            "f": "geojson",
         }
         if limit: 
             params["resultRecordCount"] = limit
@@ -91,7 +91,8 @@ class Ago(AbstractWorker):
             if 'exceededTransferLimit' in data: 
                 next_url = self.create_next_url(records, request)
                 links.next=next_url
-            rv = ReturnJson(data=records, links=links, meta=meta)
+            gjfc = GeoJsonFeatureCollection(**data)
+            rv = ReturnJson(data=gjfc, links=links, meta=meta)
             return rv
         elif 'error' in data: 
             error = Error(
@@ -103,6 +104,15 @@ class Ago(AbstractWorker):
             return rv
 
     def create_next_where_clause(self, data: list[dict]) -> str: 
+        """Create the WHERE clause to be used in the NEXT url link to retrieve 
+        the next set of data. Implementation is API-specific
+
+        Args:
+            data (list[dict]): Data records
+
+        Returns:
+            str: WHERE clause restricting the data to be retrieved
+        """        
         max_objectid = self.get_data_max_objectid(data, ['attributes', 'objectid'])
         next_where = f'objectid > {max_objectid}'
         return next_where
