@@ -1,6 +1,6 @@
-from abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 import aiohttp
 from fastapi import Request
+from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
 
 class Ago(AbstractWorker):
     
@@ -83,36 +83,30 @@ class Ago(AbstractWorker):
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
-        data = await response.json()
+        # print(f'{await response.text() = }')
         # AGO REST API doesn't respect HTTP status codes
-        if 'features' in data: 
+        if response.ok: 
+            data = await response.json()
             records = data['features']
-            meta.record_count=len(records)
-            if 'exceededTransferLimit' in data: 
-                next_url = self.create_next_url(records, request)
+            # print(f'{records = }\n')
+            gjfc = GeoJsonFeatureCollection(features=records)
+            # print(f'{gjfc = }\n')
+            meta.record_count = len(gjfc.features)
+            try: 
+                data['properties']['exceededTransferLimit'] 
+                next_url = self.create_next_url(gjfc.features, request)
                 links.next=next_url
+            except KeyError: 
+                pass
             gjfc = GeoJsonFeatureCollection(**data)
             rv = ReturnJson(data=gjfc, links=links, meta=meta)
             return rv
-        elif 'error' in data: 
+        else:
+            error_detail = await response.text()
             error = Error(
-                code=data['error']['code'], 
-                title=f'{self.name} Error: {data['error']['message']}', 
-                detail=data['error']['details'][0]
+                code=response.status,
+                title=f"{self.name} Error",
+                detail=error_detail,
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
-
-    def create_next_where_clause(self, data: list[dict]) -> str: 
-        """Create the WHERE clause to be used in the NEXT url link to retrieve 
-        the next set of data. Implementation is API-specific
-
-        Args:
-            data (list[dict]): Data records
-
-        Returns:
-            str: WHERE clause restricting the data to be retrieved
-        """        
-        max_objectid = self.get_data_max_objectid(data, ['attributes', 'objectid'])
-        next_where = f'objectid > {max_objectid}'
-        return next_where

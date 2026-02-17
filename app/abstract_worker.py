@@ -1,9 +1,9 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, BeforeValidator
 from fastapi import Request
 import inspect
-import functools
+from typing import Annotated
 from collections.abc import Callable
 
 
@@ -14,6 +14,7 @@ class GeoJsonGeometry(BaseModel):
 
 class GeoJsonFeature(BaseModel): 
     type: str = 'Feature'
+    id: Annotated[str, BeforeValidator(str)]
     properties: dict
     geometry: GeoJsonGeometry = None
 
@@ -24,7 +25,7 @@ class GeoJsonFeatureCollection(BaseModel):
 
 
 class Error(BaseModel): 
-    code: int
+    code: Annotated[str, BeforeValidator(str)]
     title: str = None
     detail: str = None
 
@@ -86,37 +87,26 @@ class AbstractWorker(ABC):
         sig = inspect.signature(func)
         available_parameters = []
         for param in sig.parameters: 
-            if param not in ('session', 'kwargs'): 
+            if param not in ('session', 'kwargs', 'request'): 
                 available_parameters.append(param)
         return available_parameters
-    
-    def get_data_max_objectid(self, data: list[dict], fields: list[str]) -> int: 
-        """Get the max "objectid" present in the data
 
-        Args:
-            data (list[dict]): Data records
-            fields (list[str]): List of keys to find the object id, proceeding depth-first
-
-        Returns:
-            int: Largest objectid present in this data batch
-        """        
-        max_objectid = 0
-        for row in data:
-            objectid = functools.reduce(dict.get, fields, row)
-            max_objectid = max(objectid, max_objectid)
-        return max_objectid
-    
-    def create_next_where_clause(self, data: list[dict]) -> str: 
-        """Create the WHERE clause to be used in the NEXT url link to retrieve 
-        the next set of data. Implementation is API-specific
+    def create_next_where_clause(self, features: list[GeoJsonFeature]) -> str:
+        """Create the WHERE clause for the NEXT url link to retrieve the next batch 
+        of data. Any API not using "objectid" would need to overwrite this method
 
         Args:
             data (list[dict]): Data records
 
         Returns:
             str: WHERE clause restricting the data to be retrieved
-        """        
-        raise NotImplementedError
+        """
+        max_objectid = 0
+        for feature in features:
+            objectid = int(feature.id)
+            max_objectid = max(objectid, max_objectid)
+        next_where = f"objectid > {max_objectid}"
+        return next_where
     
     def create_next_url(self, records: list[dict], request: Request) -> str:
         """Create the url to access the next "page" of data, preserving any existing 

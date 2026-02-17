@@ -1,17 +1,28 @@
-from abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
 import aiohttp
 import json
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
+from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
+from .utils_carto import FULL_QUERY
+import citygeo_secrets as cgs
 
+cgs.set_config(log_level='warn')
 
 class Carto(AbstractWorker): 
 
     def __init__(self): 
-        self.name = 'Carto SQL API' 
-        self.base_url = "https://phl.carto.com/api/v2/sql"
-        self.MAX_RECORDS = 1000
+        self.name = 'Carto V3 SQL API' 
+        self.base_url = "https://gcp-us-east1.api.carto.com/v3/sql/databridge-public-ro/query"
+        self.max_records = 1000
+        self.secret_name = 'CARTO - New Platform'
+        self.public_token = self.get_public_token()
+        self.auth_header = {'Authorization': f'Bearer {self.public_token}'}
 
+    def get_public_token(self) -> str: 
+        secret = cgs.get_secrets(self.secret_name)
+        token = secret[self.secret_name]['Public API Key']
+        return token
+    
     async def get_count(
         self,
         table: str | None,
@@ -70,31 +81,34 @@ class Carto(AbstractWorker):
         
         if not sql: 
             if fields: 
-                subq_select = psql.SQL('SELECT ST_Transform(the_geom, 4326), ')
+                subq_select = psql.SQL('SELECT ST_Transform(shape, 4326) as shape_1984, ')
+                if 'objectid' not in fields: 
+                    subq_select += psql.SQL('objectid, ')
                 field_list = [field.strip() for field in fields.split(",")]
                 fields_composed = psql.SQL(', ').join([psql.Identifier(field) for field in field_list])
-                fields_composed += (psql.SQL(' '))
+                fields_composed += psql.SQL(' ')
                 subq_select += fields_composed 
             else: 
-                subq_select = psql.SQL("SELECT ST_Transform(the_geom, 4326), * ")
+                subq_select = psql.SQL("SELECT ST_Transform(shape, 4326) as shape_1984, * ")
 
             subq_from = psql.SQL('FROM {table} ').format(table=psql.Identifier(table))
             subq = subq_select + subq_from
             if where: 
                 subq_where = psql.SQL(f'WHERE {where} ')
                 subq = subq + subq_where
-            subq += psql.SQL('ORDER BY cartodb_id ')
+            subq += psql.SQL('ORDER BY objectid ')
             if limit is None: 
-                limit = self.MAX_RECORDS
+                limit = self.max_records
             else: 
-                limit = min(limit, self.MAX_RECORDS)
+                limit = min(limit, self.max_records)
             subq_limit = psql.SQL('LIMIT {limit} ').format(limit=psql.Literal(limit))
             subq = subq + subq_limit
-            query = psql.SQL('WITH subq as ({subq}) SELECT ST_AsGeoJSON(subq.*) FROM subq').format(subq=subq)
+            query = psql.SQL(FULL_QUERY).format(subq=subq)
         else: 
             query = psql.SQL(sql)
         params = {'q': query.as_string()}
-        async with session.get(self.base_url, params=params) as response:
+        # print(f'{query.as_string() = }')
+        async with session.get(self.base_url, params=params, headers=self.auth_header) as response:
             return await self.normalize_rv(request, response, limit)
 
     async def normalize_rv(
@@ -104,12 +118,14 @@ class Carto(AbstractWorker):
         meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
         if response.ok: 
-            records = data['rows']
-            meta.record_count = data['total_rows']
+            records = data["rows"][0]["jsonb_build_object"]
+            print(f'{records = }\n')
+            gjfc = GeoJsonFeatureCollection(**records)
+            # print(f'{gjfc = }\n')
+            meta.record_count = len(gjfc.features)
             if meta.record_count == limit:
-                next_url = self.create_next_url(records, request)
+                next_url = self.create_next_url(gjfc.features, request)
                 links.next = next_url
-            gjfc = self.create_geojson_feature_collection(records)
             rv = ReturnJson(data=gjfc, links=links, meta=meta)
             return rv
         else: 
@@ -120,28 +136,3 @@ class Carto(AbstractWorker):
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
-
-    def create_next_where_clause(self, data: list[dict]) -> str:
-        """Create the WHERE clause to be used in the NEXT url link to retrieve 
-        the next set of data. Implementation is API-specific
-
-        Args:
-            data (list[dict]): Data records
-
-        Returns:
-            str: WHERE clause restricting the data to be retrieved
-        """        
-        max_objectid = self.get_data_max_objectid(data, ["cartodb_id"])
-        next_where = f"cartodb_id > {max_objectid}"
-        return next_where
-
-    def create_geojson_feature_collection(
-        self, records: list[dict]
-    ) -> GeoJsonFeatureCollection:
-        geojsons = []
-        for record in records: 
-            j = json.loads(record['st_asgeojson'])
-            geojson = GeoJsonFeature(**j)
-            geojsons.append(geojson)
-        gjfc = GeoJsonFeatureCollection(features=geojsons)
-        return gjfc

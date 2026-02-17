@@ -2,11 +2,11 @@ from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from enum import Enum
-from carto import Carto
-from ago import Ago
 import aiohttp
-from abstract_worker import AbstractWorker, ReturnJson, Links
 from typing import Annotated
+from .carto import Carto
+from .ago import Ago
+from .abstract_worker import AbstractWorker, ReturnJson, Links
 
 
 class SessionManager:
@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan) 
 
 
-@ app.get("/")
+@app.get("/")
 async def root() -> dict[str, list[str]]:
     return {
         "Available Services": [serv.value for serv in Service],
@@ -167,7 +167,7 @@ async def get_data(
             return rv
         else:
             rv = JSONResponse(
-                status_code=rv.errors[0].code,
+                status_code=int(rv.errors[0].code),
                 content=rv.model_dump(mode="json", exclude_none=True),
             )
             return rv

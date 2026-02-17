@@ -6,6 +6,12 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "aiohttp[speedups]>=3.13.3",
+    "citygeo-secrets",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.128.0",
+    "httpx>=0.28.1",
     "psycopg>=3.3.2",
+    "pytest>=9.0.2",
 ]
+
+[tool.uv.sources]
+citygeo-secrets = { git = "ssh://git@github.com/CityOfPhiladelphia/citygeo_secrets.git" }
