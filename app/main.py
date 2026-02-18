@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from enum import Enum
+import asyncio
 import aiohttp
 from typing import Annotated
 from .carto import Carto
@@ -83,7 +84,7 @@ async def root() -> dict[str, list[str]]:
     }
 
 
-@app.get("/get", response_model=ReturnJson, response_model_exclude_none=True)
+@app.get("/get", response_model=ReturnJson, response_model_exclude_unset=True)
 async def get_data(
     request: Request, 
     table: Annotated[
@@ -111,11 +112,11 @@ async def get_data(
         ),
     ] = None,
     count_only: Annotated[
-        bool | None,
+        bool,
         Query(
             description=f"Return record count of provided query. Not used if `sql` parameter is provided.{make_param_api_descriptions('count_only')}"
         ),
-    ] = None,
+    ] = False,
     sql: Annotated[
         str | None,
         Query(
@@ -161,9 +162,20 @@ async def get_data(
         return response
     else: 
         api = MAP_STR_TO_API[service.lower()]
-        rv = await api.get(**params)
+        if count_only: 
+            rv = await api.get_count(**params)
+        else: 
+            rv_geom = await api.get_geometry(**params)  # Must happen first as we don't know if Carto table is geometric or not
+            if rv_geom and rv_geom.errors: 
+                return rv_geom
+            async with asyncio.TaskGroup() as tg:
+                task1 = tg.create_task(api.get_count(**params))
+                task2 = tg.create_task(api.get(**params))
+            rv_count = task1.result()
+            rv = task2.result()
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
-        if not rv.errors:
+        if not rv.errors and not rv_count.errors:
+            rv.meta.records_total = rv_count.meta.records_total
             return rv
         else:
             rv = JSONResponse(

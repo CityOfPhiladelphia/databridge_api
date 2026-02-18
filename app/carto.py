@@ -1,4 +1,5 @@
 import aiohttp
+import datetime as dt
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
 from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
@@ -16,11 +17,67 @@ class Carto(AbstractWorker):
         self.secret_name = 'CARTO - New Platform'
         self.public_token = self.get_public_token()
         self.auth_header = {'Authorization': f'Bearer {self.public_token}'}
+        self.cache = {}
+        self.geom_cache = {}
 
     def get_public_token(self) -> str: 
         secret = cgs.get_secrets(self.secret_name)
         token = secret[self.secret_name]['Public API Key']
         return token
+    
+    async def check_geom_cache(self, table: str, **kwargs): 
+        if table in self.geom_cache: 
+            if dt.datetime.now() - self.geom_cache[table]['retrieved_at'] <= self.CACHE_DURATION: 
+                return self.geom_cache[table]
+        return None
+    
+    async def get_geometry(self, table: str, session: aiohttp.ClientSession, **kwargs): 
+        """ Determine if a table in Carto is geometric or not. This info changes 
+        the SQL query sent to Carto to retrieve data 
+
+        Args:
+            table (str): _description_
+            session (aiohttp.ClientSession): _description_
+
+        Returns:
+            _type_: _description_
+        """        
+        cache_result = await self.check_geom_cache(table)
+        if not cache_result:
+            query = psql.SQL("SELECT * FROM {table} LIMIT 1").format(
+                table=psql.Identifier(table)
+            )
+            params = {'q': query.as_string()}
+            async with session.get(
+                self.base_url, params=params, headers=self.auth_header
+            ) as response:
+                return await self.normalize_rv_geometry(table, response)
+
+    async def normalize_rv_geometry(
+        self, table: str, response: aiohttp.ClientResponse
+    ) -> ReturnJson:
+        meta = Meta(service=self.name, service_url=str(response.url))
+        data = await response.json()
+        if response.ok:
+            geometry = None
+            for col in data['schema']: 
+                if col['type'] == 'geometry': 
+                    geometry = col['name']
+                    break
+            self.geom_cache[table] = {
+                "geometry": geometry,
+                "retrieved_at": dt.datetime.now(),
+            }
+            rv = ReturnJson(meta=meta)
+            return rv
+        else:
+            error = Error(
+                code=response.status,
+                title=f"{self.name} Error",
+                detail=data["error"],
+            )
+            rv = ReturnJson(errors=[error], meta=meta)
+            return rv
     
     async def get_count(
         self,
@@ -28,9 +85,16 @@ class Carto(AbstractWorker):
         where: str | None,
         session: aiohttp.ClientSession,
         request: Request,
+        **kwargs,
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
+        cache_result = self.check_cache(table)
+        if cache_result:
+            return ReturnJson(
+                links=cache_result["links"], meta=cache_result["meta"]
+            )
+        
         q_select = psql.SQL('SELECT COUNT(*)')
         q_from = psql.SQL(' FROM {table} ').format(table=psql.Identifier(table))
         query = q_select + q_from
@@ -38,24 +102,31 @@ class Carto(AbstractWorker):
             q_where = psql.SQL(f'WHERE {where} ')
             query = query + q_where
         params = {'q': query.as_string()}
-        async with session.get(self.base_url, params=params) as response:
-            return await self.normalize_rv_count(request, response)
+        async with session.get(
+            self.base_url, params=params, headers=self.auth_header
+        ) as response:
+            return await self.normalize_rv_count(table, request, response)
 
     async def normalize_rv_count(
-        self, request: Request, response: aiohttp.ClientResponse
+        self, table: str, request: Request, response: aiohttp.ClientResponse
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
         if response.ok:
-            meta.record_count = data["rows"][0]["count"]
+            meta.records_total = data["rows"][0]["count"]
+            self.cache[table] = {
+                "links": links,
+                "meta": meta,
+                "retrieved_at": dt.datetime.now(),
+            }
             rv = ReturnJson(links=links, meta=meta)
             return rv
         else:
             error = Error(
                 code=response.status,
                 title=f"{self.name} Error",
-                detail=data["error"][0],
+                detail=data["error"],
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
@@ -67,7 +138,7 @@ class Carto(AbstractWorker):
         fields: str | None,
         where: str | None,
         limit: int | None,
-        count_only: bool | None,
+        count_only: bool,
         sql: str | None,
         session: aiohttp.ClientSession,
         request: Request,
@@ -75,22 +146,22 @@ class Carto(AbstractWorker):
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
-        if count_only: 
-            return await self.get_count(table, where, session, request)
-        
         if not sql: 
+            subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
+            geom_column = self.geom_cache[table]['geometry']
+            if geom_column:
+                subq_select += psql.SQL(
+                    "ST_Transform({geom_column}, 4326) AS shape_1984, "
+                ).format(geom_column=psql.Identifier(geom_column))
+            else: 
+                subq_select += psql.SQL("NULL AS shape_1984, ")
             if fields: 
-                subq_select = psql.SQL(
-                    "SELECT ST_Transform(shape, 4326) as shape_1984, objectid AS geojson_id, "
-                )
                 field_list = [field.strip() for field in fields.split(",")]
                 fields_composed = psql.SQL(', ').join([psql.Identifier(field) for field in field_list])
                 fields_composed += psql.SQL(' ')
                 subq_select += fields_composed 
             else: 
-                subq_select = psql.SQL(
-                    "SELECT ST_Transform(shape, 4326) as shape_1984, objectid AS geojson_id, * "
-                )
+                subq_select += psql.SQL("* ")
 
             subq_from = psql.SQL('FROM {table} ').format(table=psql.Identifier(table))
             subq = subq_select + subq_from
@@ -108,8 +179,10 @@ class Carto(AbstractWorker):
         else: 
             query = psql.SQL(sql)
         params = {'q': query.as_string()}
-        # print(f'{query.as_string() = }')
-        async with session.get(self.base_url, params=params, headers=self.auth_header) as response:
+        # print('query.as_string(): ', query.as_string())
+        async with session.get(
+            self.base_url, params=params, headers=self.auth_header
+        ) as response:
             return await self.normalize_rv(request, response, limit)
 
     async def normalize_rv(

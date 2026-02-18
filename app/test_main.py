@@ -4,25 +4,30 @@ from .main import app, MAP_STR_TO_API
 
 # Response validation handled by pydantic on API server itself
 # Still have to coerce FastAPI default validation errors to JSON:API spec
-TABLE = 'dor_parcel'
+GOOD_TABLES = [
+    'dor_parcel',       # Contains shape data
+    'ppd_complaints'    # Does not contain shape data
+]
 
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
         yield c
 
+@pytest.mark.parametrize('table', GOOD_TABLES)
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
-def test_valid(client, service: str):
-    params = {'table': 'TABLE', 'service': service}
+def test_valid(client, service: str, table: str):
+    params = {'table': table, 'service': service}
     response = client.get('/get', params=params)
     rv = response.json()
     assert response.status_code == 200
     assert rv['links']['self'] == response.url
 
+@pytest.mark.parametrize("table", [GOOD_TABLES[0]])
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
-def test_valid_limit_next(client, service: str):
+def test_valid_limit_next(client, service: str, table: str):
     LIMIT = 2
-    params = {'table': 'TABLE', 'limit': LIMIT, 'service': service}
+    params = {'table': table, 'limit': LIMIT, 'service': service}
     response = client.get('/get', params=params)
     rv = response.json()
     assert response.status_code == 200
@@ -43,8 +48,9 @@ def test_valid_limit_next(client, service: str):
     for id2 in ids2: 
         assert id2 > max_id
 
-def test_no_service(client):
-    params = {'table': 'TABLE', 'limit': 1}
+@pytest.mark.parametrize("table", GOOD_TABLES)
+def test_no_service(client, table: str):
+    params = {'table': table, 'limit': 1}
     response = client.get('/get', params=params)
     assert response.status_code == 200
 

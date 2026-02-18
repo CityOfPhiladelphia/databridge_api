@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel, HttpUrl, BeforeValidator
 from fastapi import Request
 import inspect
+import datetime as dt
 from typing import Annotated
 from collections.abc import Callable
 
@@ -16,7 +17,7 @@ class GeoJsonFeature(BaseModel):
     type: str = 'Feature'
     id: Annotated[str, BeforeValidator(str)]
     properties: dict
-    geometry: GeoJsonGeometry = None
+    geometry: GeoJsonGeometry | None = None
 
 
 class GeoJsonFeatureCollection(BaseModel): 
@@ -46,17 +47,23 @@ class Meta(BaseModel, validate_assignment=True):
 class ReturnJson(BaseModel, validate_assignment=True): 
     data: GeoJsonFeatureCollection = None # Either data or errors should be returned
     errors: list[Error] = None
-    links: Links
+    links: Links = None
     meta: Meta = None
-
 
 class AbstractWorker(ABC): 
     """Abstract base class to ensure worker classes are properly implemented
     See https://www.geeksforgeeks.org/factory-method-python-design-patterns/"""
+    CACHE_DURATION = dt.timedelta(minutes=15)
 
     def __init__(self): 
         pass
 
+    def check_cache(self, table: str) -> dict | None: 
+        if table in self.cache: 
+            if dt.datetime.now() - self.cache[table]['retrieved_at'] <= self.CACHE_DURATION: 
+                return self.cache[table]
+        return None
+    
     @abstractmethod
     async def get_count(self) -> ReturnJson: 
         raise NotImplementedError
