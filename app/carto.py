@@ -1,8 +1,7 @@
 import aiohttp
-import json
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
-from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
+from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 from .utils_carto import FULL_QUERY
 import citygeo_secrets as cgs
 
@@ -81,15 +80,17 @@ class Carto(AbstractWorker):
         
         if not sql: 
             if fields: 
-                subq_select = psql.SQL('SELECT ST_Transform(shape, 4326) as shape_1984, ')
-                if 'objectid' not in fields: 
-                    subq_select += psql.SQL('objectid, ')
+                subq_select = psql.SQL(
+                    "SELECT ST_Transform(shape, 4326) as shape_1984, objectid AS geojson_id, "
+                )
                 field_list = [field.strip() for field in fields.split(",")]
                 fields_composed = psql.SQL(', ').join([psql.Identifier(field) for field in field_list])
                 fields_composed += psql.SQL(' ')
                 subq_select += fields_composed 
             else: 
-                subq_select = psql.SQL("SELECT ST_Transform(shape, 4326) as shape_1984, * ")
+                subq_select = psql.SQL(
+                    "SELECT ST_Transform(shape, 4326) as shape_1984, objectid AS geojson_id, * "
+                )
 
             subq_from = psql.SQL('FROM {table} ').format(table=psql.Identifier(table))
             subq = subq_select + subq_from
@@ -119,7 +120,7 @@ class Carto(AbstractWorker):
         data = await response.json()
         if response.ok: 
             records = data["rows"][0]["jsonb_build_object"]
-            print(f'{records = }\n')
+            # print(f'{records = }\n')
             gjfc = GeoJsonFeatureCollection(**records)
             # print(f'{gjfc = }\n')
             meta.record_count = len(gjfc.features)
@@ -132,7 +133,7 @@ class Carto(AbstractWorker):
             error = Error(
                 code=response.status,
                 title=f"{self.name} Error",
-                detail=data["error"][0],
+                detail=data["error"],
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv

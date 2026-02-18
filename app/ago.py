@@ -1,6 +1,6 @@
 import aiohttp
 from fastapi import Request
-from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
+from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 
 class Ago(AbstractWorker):
     

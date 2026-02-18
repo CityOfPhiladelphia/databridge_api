@@ -4,7 +4,13 @@ WITH subq as (
 ),
 geojson as (
     SELECT
-        (ST_AsGeoJSON(subq.*, geom_column => 'shape_1984', id_column => 'objectid') :: jsonb) AS feature
+        (
+            ST_AsGeoJSON(
+                subq.*,
+                geom_column => 'shape_1984',
+                id_column => 'geojson_id'
+            ) :: jsonb
+        ) AS feature
     FROM
         subq
 )
