@@ -84,24 +84,33 @@ class Ago(AbstractWorker):
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
-        # print(f'{await response.text() = }')
         # AGO REST API doesn't respect HTTP status codes
         if response.ok: 
             data = await response.json()
-            records = data['features']
-            # print(f'{records = }\n')
-            gjfc = GeoJsonFeatureCollection(features=records)
-            # print(f'{gjfc = }\n')
-            meta.record_count = len(gjfc.features)
-            try: 
-                data['properties']['exceededTransferLimit'] 
-                next_url = self.create_next_url(gjfc.features, request)
-                links.next=next_url
-            except KeyError: 
-                pass
-            gjfc = GeoJsonFeatureCollection(**data)
-            rv = ReturnJson(data=gjfc, links=links, meta=meta)
-            return rv
+            if 'error' not in data: 
+                records = data['features']
+                gjfc = GeoJsonFeatureCollection(features=records)
+                meta.record_count = len(gjfc.features)
+                try: 
+                    data['properties']['exceededTransferLimit'] 
+                    next_url = self.create_next_url(gjfc.features, request)
+                    links.next=next_url
+                except KeyError: 
+                    pass
+                gjfc = GeoJsonFeatureCollection(**data)
+                rv = ReturnJson(data=gjfc, links=links, meta=meta)
+                return rv
+            else: 
+                title = f'{self.name} Error'
+                if data['error']['message']: 
+                    title += f': {data['error']['message']}'
+                error = Error(
+                    code=data['error']['code'], 
+                    title=title, 
+                    detail=data['error']['details'][0]
+                )
+                rv = ReturnJson(errors=[error], links=links, meta=meta)
+                return rv
         else:
             error_detail = await response.text()
             error = Error(

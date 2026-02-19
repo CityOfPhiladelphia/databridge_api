@@ -14,6 +14,10 @@ def client():
     with TestClient(app) as c:
         yield c
 
+################################################################################
+# Valid Parameter Tests # 
+################################################################################
+
 @pytest.mark.parametrize('table', GOOD_TABLES)
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
 def test_valid(client, service: str, table: str):
@@ -22,6 +26,76 @@ def test_valid(client, service: str, table: str):
     rv = response.json()
     assert response.status_code == 200
     assert rv['links']['self'] == response.url
+
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_valid_fields(client, service: str):
+    params = {
+        "table": GOOD_TABLES[0],
+        "limit": 2,
+        "fields": "objectid,addr_std",
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    rv = response.json()
+    data = rv['data']
+    assert response.status_code == 200
+    for feature in data['features']: 
+        assert set(feature['properties'].keys()) == set(params['fields'].split(','))
+
+@pytest.mark.skip('''Skipping this test because if user does not request the "objectid" 
+field and this API doesn't include it, then AGO will not provide feature IDs. 
+I'm making the design decision to include an extra field in the user response 
+rather than not providing the "id" column. Either way, AGO (and thus this API) 
+violates the JSON:API spec.''')
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_valid_fields2(client, service: str):
+    params = {
+        "table": GOOD_TABLES[0],
+        "limit": 2,
+        "fields": "addr_std",
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    rv = response.json()
+    data = rv['data']
+    assert response.status_code == 200
+    for feature in data['features']: 
+        assert set(feature['properties'].keys()) == set(params['fields'].split(','))
+
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_valid_where(client, service: str):
+    params = {
+        "table": GOOD_TABLES[1],
+        "where": "objectid <= 2",
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    rv = response.json()
+    assert response.status_code == 200
+    assert rv['meta']['record_count'] == 2
+    assert len(rv['data']['features']) == 2
+
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_valid_where_parethesization(client, service: str):
+    '''Ensure that the where clause given by the next url and joined with an SQL 
+    AND doesn't decouple any existing WHERE clause, i.e. because SQL `AND` binds 
+    more tightly than `OR`'''
+    LIMIT = 2
+    params = {
+        "table": GOOD_TABLES[1],
+        "where": "objectid >= 1 OR objectid >= 3",
+        "limit": LIMIT, 
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    rv = response.json()
+    assert response.status_code == 200
+    next_url = rv['links']['next']
+
+    response2 = client.get(next_url)
+    rv2 = response2.json()
+    rv2_first_objectid = int(rv2["data"]["features"][0]['id'])
+    assert rv2_first_objectid >= LIMIT
 
 @pytest.mark.parametrize("table", [GOOD_TABLES[0]])
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
@@ -48,32 +122,78 @@ def test_valid_limit_next(client, service: str, table: str):
     for id2 in ids2: 
         assert id2 > max_id
 
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_valid_count_only(client, service: str):
+    params = {
+        "table": GOOD_TABLES,
+        "fields": "whatever,whatever", # Should have no effect
+        "limit": 3,                    # Should have no effect
+        "count_only": "true",
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    assert response.status_code == 200
+
+def test_valid_sql(client):
+    params = {
+        "table": 'ANSTHES',            # Should have no effect
+        "fields": "whatever,whatever", # Should have no effect
+        "limit": 3,                    # Should have no effect
+        "sql": "SELECT * FROM dor_parcel LIMIT 5",
+        "service": 'carto',
+    }
+    response = client.get('/get', params=params)
+    assert response.status_code == 200
+    data = response.json()
+    assert data['meta']['record_count'] == 5
+
 @pytest.mark.parametrize("table", GOOD_TABLES)
 def test_valid_no_service(client, table: str):
     params = {'table': table, 'limit': 1}
     response = client.get('/get', params=params)
     assert response.status_code == 200
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
-def test_valid_fields(client, service: str):
-    params = {
-        "table": GOOD_TABLES[0],
-        "limit": 2,
-        "fields": "objectid,addr_std",
-        "service": service,
-    }
-    response = client.get('/get', params=params)
-    rv = response.json()
-    data = rv['data']
-    assert response.status_code == 200
-    for feature in data['features']: 
-        assert set(feature['properties'].keys()) == set(params['fields'].split(','))
+################################################################################
+# Invalid Parameter Tests # 
+################################################################################
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
 def test_invalid_table(client, service: str): 
     params = {'table': 'bad_table', 'service': service}
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_invalid_fields(client, service: str):
+    # Note that AGO will run with it if the field is "1234" or "'text' AS example"
+    params = {
+        "table": GOOD_TABLES[0],
+        "fields": "badfield",
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    assert response.status_code >=400 and response.status_code < 500
+
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_invalid_where(client, service: str):
+    params = {
+        "table": GOOD_TABLES[1],
+        "where": "not_a_column <= 2",
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    assert response.status_code >=400 and response.status_code < 500
+
+@pytest.mark.parametrize('limit', ["-1", "abc"])
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_invalid_limit(client, service: str, limit: str):
+    params = {
+        "table": GOOD_TABLES[0],
+        "limit": limit,
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    assert response.status_code >=400 and response.status_code <= 500
 
 def test_invalid_no_service(client):
     params = {'table': 'bad_table', 'limit': 1}

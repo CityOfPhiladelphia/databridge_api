@@ -1,7 +1,8 @@
 {
+    "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Debug Tests",
+            "name": "Python Debug Tests",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
@@ -12,7 +13,7 @@
             "justMyCode": false
         },
         {
-            "name": "Python Debugger: FastAPI",
+            "name": "Python FastAPI",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
@@ -20,7 +21,8 @@
                 "app.main:app",
                 "--reload"
             ],
-            "jinja": true
+            "jinja": true, 
+            "justMyCode": false
         }
     ]
 }

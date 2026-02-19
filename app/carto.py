@@ -2,7 +2,7 @@ import aiohttp
 import datetime as dt
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
-from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
+from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
 from .utils_carto import FULL_QUERY
 import citygeo_secrets as cgs
 
@@ -132,14 +132,15 @@ class Carto(AbstractWorker):
         request: Request,
         **kwargs,
     ) -> ReturnJson:
-        # Must happen first as we don't know if Carto table is geometric or not
-        rv_geom = await self.get_geometry(table, session)  
-        if rv_geom and rv_geom.errors: 
-            return rv_geom
-        
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
         if not sql: 
+            # Must happen first as we don't know if Carto table is geometric, which 
+            # affects geojson SQL query structure
+            rv_geom = await self.get_geometry(table, session)  
+            if rv_geom and rv_geom.errors: 
+                return rv_geom
+            
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
             geom_column = self.geom_cache[table]['geometry']
             if geom_column:
@@ -172,7 +173,6 @@ class Carto(AbstractWorker):
         else: 
             query = psql.SQL(sql)
         params = {'q': query.as_string()}
-        # print('query.as_string(): ', query.as_string())
         async with session.get(
             self.base_url, params=params, headers=self.auth_header
         ) as response:
@@ -185,10 +185,16 @@ class Carto(AbstractWorker):
         meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
         if response.ok: 
-            records = data["rows"][0]["jsonb_build_object"]
-            # print(f'{records = }\n')
-            gjfc = GeoJsonFeatureCollection(**records)
-            # print(f'{gjfc = }\n')
+            try: 
+                records = data["rows"][0]["jsonb_build_object"]
+                gjfc = GeoJsonFeatureCollection(**records)
+            except KeyError: # When user passed SQL
+                geojsons = []
+                for record in data['rows']: 
+                    geojson = GeoJsonFeature(properties=record)
+                    geojsons.append(geojson)
+                gjfc = GeoJsonFeatureCollection(features=geojsons)
+
             meta.record_count = len(gjfc.features)
             if meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)

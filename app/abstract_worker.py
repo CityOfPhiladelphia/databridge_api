@@ -15,7 +15,7 @@ class GeoJsonGeometry(BaseModel):
 
 class GeoJsonFeature(BaseModel): 
     type: str = 'Feature'
-    id: Annotated[str, BeforeValidator(str)]
+    id: Annotated[str, BeforeValidator(str)] | None = None
     properties: dict
     geometry: GeoJsonGeometry | None = None
 
@@ -57,12 +57,6 @@ class AbstractWorker(ABC):
 
     def __init__(self): 
         pass
-
-    def check_cache(self, table: str) -> dict | None: 
-        if table in self.cache: 
-            if dt.datetime.now() - self.cache[table]['retrieved_at'] <= self.CACHE_DURATION: 
-                return self.cache[table]
-        return None
     
     @abstractmethod
     async def get_count(self) -> ReturnJson: 
@@ -130,7 +124,7 @@ class AbstractWorker(ABC):
         old_where = request.query_params.get("where")
         next_where = self.create_next_where_clause(records)
         if old_where:
-            new_where = f"{old_where} AND {next_where}"
+            new_where = f"({old_where}) AND {next_where}"
         else:
             new_where = next_where
         next_url = str(old_url.include_query_params(where=new_where))
