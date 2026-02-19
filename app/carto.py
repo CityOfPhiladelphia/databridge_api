@@ -17,7 +17,6 @@ class Carto(AbstractWorker):
         self.secret_name = 'CARTO - New Platform'
         self.public_token = self.get_public_token()
         self.auth_header = {'Authorization': f'Bearer {self.public_token}'}
-        self.cache = {}
         self.geom_cache = {}
 
     def get_public_token(self) -> str: 
@@ -89,12 +88,6 @@ class Carto(AbstractWorker):
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
-        cache_result = self.check_cache(table)
-        if cache_result:
-            return ReturnJson(
-                links=cache_result["links"], meta=cache_result["meta"]
-            )
-        
         q_select = psql.SQL('SELECT COUNT(*)')
         q_from = psql.SQL(' FROM {table} ').format(table=psql.Identifier(table))
         query = q_select + q_from
@@ -105,21 +98,16 @@ class Carto(AbstractWorker):
         async with session.get(
             self.base_url, params=params, headers=self.auth_header
         ) as response:
-            return await self.normalize_rv_count(table, request, response)
+            return await self.normalize_rv_count(request, response)
 
     async def normalize_rv_count(
-        self, table: str, request: Request, response: aiohttp.ClientResponse
+        self, request: Request, response: aiohttp.ClientResponse
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
         if response.ok:
             meta.records_total = data["rows"][0]["count"]
-            self.cache[table] = {
-                "links": links,
-                "meta": meta,
-                "retrieved_at": dt.datetime.now(),
-            }
             rv = ReturnJson(links=links, meta=meta)
             return rv
         else:
@@ -144,6 +132,11 @@ class Carto(AbstractWorker):
         request: Request,
         **kwargs,
     ) -> ReturnJson:
+        # Must happen first as we don't know if Carto table is geometric or not
+        rv_geom = await self.get_geometry(table, session)  
+        if rv_geom and rv_geom.errors: 
+            return rv_geom
+        
         # These queries on their own are unsafe, but we are relying on the safety 
         # checks of the back-end APIs
         if not sql: 

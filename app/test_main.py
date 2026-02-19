@@ -49,7 +49,7 @@ def test_valid_limit_next(client, service: str, table: str):
         assert id2 > max_id
 
 @pytest.mark.parametrize("table", GOOD_TABLES)
-def test_no_service(client, table: str):
+def test_valid_no_service(client, table: str):
     params = {'table': table, 'limit': 1}
     response = client.get('/get', params=params)
     assert response.status_code == 200
@@ -57,7 +57,7 @@ def test_no_service(client, table: str):
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
 def test_valid_fields(client, service: str):
     params = {
-        "table": "TABLE",
+        "table": GOOD_TABLES[0],
         "limit": 2,
         "fields": "objectid,addr_std",
         "service": service,
@@ -75,3 +75,7 @@ def test_invalid_table(client, service: str):
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
 
+def test_invalid_no_service(client):
+    params = {'table': 'bad_table', 'limit': 1}
+    response = client.get('/get', params=params)
+    assert response.status_code >=400 and response.status_code < 500

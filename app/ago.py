@@ -1,5 +1,4 @@
 import aiohttp
-import datetime as dt
 from fastapi import Request
 from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 
@@ -9,12 +8,6 @@ class Ago(AbstractWorker):
         self.name = 'ArcGIS Online'
         self.organization_url = "https://services.arcgis.com/fLeGjb7u4uXqeF9q/ArcGIS/rest/services/"
         self.query_url = "/FeatureServer/0/query"
-        self.cache = {}
-
-    async def get_geometry(self, **kwargs): 
-        """AGO itself properly handles whether the table is geometric or not; no 
-        need to do anything"""        
-        pass
     
     async def get_count(
         self,
@@ -24,12 +17,6 @@ class Ago(AbstractWorker):
         request: Request,
         **kwargs
     ) -> ReturnJson:
-        cache_result = self.check_cache(table)
-        if cache_result:
-            return ReturnJson(
-                links=cache_result["links"], meta=cache_result["meta"]
-            )
-        
         url = f'{self.organization_url}{table}{self.query_url}'
         if not where: 
             where = '1=1'
@@ -39,29 +26,25 @@ class Ago(AbstractWorker):
             "f": "geojson",
         }
         async with session.get(url, params=params) as response:
-            return await self.normalize_rv_count(table, request, response)
+            return await self.normalize_rv_count(request, response)
 
     async def normalize_rv_count(
-        self, table: str, request: Request, response: aiohttp.ClientResponse
+        self, request: Request, response: aiohttp.ClientResponse
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
-        data = await response.json()
         # AGO REST API doesn't respect HTTP status codes
-        if 'error' not in data: 
+        if response.ok: 
+            data = await response.json()
             meta.records_total = data['properties']['count']
-            self.cache[table] = {
-                "links": links,
-                "meta": meta,
-                "retrieved_at": dt.datetime.now(),
-            }
             rv = ReturnJson(links=links, meta=meta)
             return rv
-        else: 
+        else:
+            error_detail = await response.text()
             error = Error(
-                code=data["error"]["code"],
-                title=f"{self.name} Error: {data['error']['message']}",
-                detail=data['error']['details'][0],
+                code=response.status,
+                title=f"{self.name} Error",
+                detail=error_detail,
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv

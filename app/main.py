@@ -2,12 +2,12 @@ from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from enum import Enum
-import asyncio
 import aiohttp
 from typing import Annotated
 from .carto import Carto
 from .ago import Ago
 from .abstract_worker import AbstractWorker, ReturnJson, Links
+from .utils import description
 
 
 class SessionManager:
@@ -74,17 +74,22 @@ async def lifespan(app: FastAPI):
     await session_manager.stop()
 
 
-app = FastAPI(lifespan=lifespan) 
+app = FastAPI(lifespan=lifespan, title="OIT API Data Wrapper", description=description) 
 
 
-@app.get("/")
+@app.get("/", tags=['Routes'])
 async def root() -> dict[str, list[str]]:
     return {
         "Available Services": [serv.value for serv in Service],
     }
 
 
-@app.get("/get", response_model=ReturnJson, response_model_exclude_unset=True)
+@app.get(
+    "/get",
+    response_model=ReturnJson,
+    response_model_exclude_unset=True,
+    tags=["Routes"],
+)
 async def get_data(
     request: Request, 
     table: Annotated[
@@ -156,7 +161,7 @@ async def get_data(
             else:
                 rv_combined.errors.append(rv.errors[0])
         response = JSONResponse(
-            status_code=rv.errors[0].code,
+            status_code=int(rv.errors[0].code),
             content=rv_combined.model_dump(mode="json", exclude_none=True),
         )
         return response
@@ -165,17 +170,9 @@ async def get_data(
         if count_only: 
             rv = await api.get_count(**params)
         else: 
-            rv_geom = await api.get_geometry(**params)  # Must happen first as we don't know if Carto table is geometric or not
-            if rv_geom and rv_geom.errors: 
-                return rv_geom
-            async with asyncio.TaskGroup() as tg:
-                task1 = tg.create_task(api.get_count(**params))
-                task2 = tg.create_task(api.get(**params))
-            rv_count = task1.result()
-            rv = task2.result()
+            rv = await api.get(**params) 
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
-        if not rv.errors and not rv_count.errors:
-            rv.meta.records_total = rv_count.meta.records_total
+        if not rv.errors:
             return rv
         else:
             rv = JSONResponse(
