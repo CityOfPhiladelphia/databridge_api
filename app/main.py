@@ -119,7 +119,7 @@ async def get_data(
     count_only: Annotated[
         bool,
         Query(
-            description=f"Return record count of provided query. Not used if `sql` parameter is provided.{make_param_api_descriptions('count_only')}"
+            description=f"Return record count of provided query. {make_param_api_descriptions('count_only')}"
         ),
     ] = False,
     sql: Annotated[
