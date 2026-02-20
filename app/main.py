@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 from enum import Enum
 import aiohttp
 from typing import Annotated
 from .carto import Carto
 from .ago import Ago
-from .abstract_worker import AbstractWorker, ReturnJson, Links
+from .abstract_worker import AbstractWorker, ReturnJson, Links, Error
 from .utils import description
 
 
@@ -77,7 +78,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, title="OIT API Data Wrapper", description=description) 
 
 
-@app.get("/", tags=['Routes'])
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    '''Overwrite default FastAPI Validation Error to return consistent with JSON:API Spec'''
+    links = Links(self=str(request.url))
+    rv_combined = ReturnJson(links=links, errors=[])
+    for err in exc.errors(): 
+        error = Error(code='422', title=err['type'], detail=f'Message: {err['msg']}. Location: {err['loc']}. Input: \'{err['input']}\'')
+        rv_combined.errors.append(error)
+    response = JSONResponse(
+        status_code=422,
+        content=rv_combined.model_dump(mode="json", exclude_none=True),
+    )
+    return response
+
+
+@ app.get("/", tags=["Routes"])
 async def root() -> dict[str, list[str]]:
     return {
         "Available Services": [serv.value for serv in Service],

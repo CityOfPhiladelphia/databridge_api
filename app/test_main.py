@@ -181,6 +181,8 @@ def test_invalid_table(client, service: str):
     params = {'table': 'bad_table', 'service': service}
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert 'errors' in data
 
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
@@ -194,6 +196,8 @@ def test_invalid_fields(client, service: str):
     }
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert "errors" in data
 
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
@@ -206,6 +210,8 @@ def test_invalid_where(client, service: str):
     }
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert "errors" in data
 
 
 @pytest.mark.parametrize('limit', ["-1", "abc"])
@@ -218,7 +224,9 @@ def test_invalid_limit(client, service: str, limit: str):
         "service": service,
     }
     response = client.get('/get', params=params)
-    assert response.status_code >=400 and response.status_code <= 500 # Carto returns a 500 error here
+    assert response.status_code >=400 and response.status_code <= 500  # Carto returns a 500 error here
+    data = response.json()
+    assert "errors" in data
 
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
@@ -230,7 +238,9 @@ def test_invalid_count_only(client, service: str, ):
         'service': service
     }
     response = client.get('/get', params=params)
-    assert response.status_code >=400 and response.status_code < 500 
+    assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert "errors" in data
 
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
@@ -242,6 +252,8 @@ def test_invalid_sql(client, service: str):
     }
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert "errors" in data
 
 
 def test_invalid_no_service(client):
@@ -250,3 +262,5 @@ def test_invalid_no_service(client):
     params = {'table': 'bad_table', 'limit': 1}
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert "errors" in data
