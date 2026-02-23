@@ -127,6 +127,7 @@ class Carto(AbstractWorker):
         where: str | None,
         limit: int | None,
         count_only: bool,
+        out_sr: int | None,
         sql: str | None,
         session: aiohttp.ClientSession,
         request: Request,
@@ -144,11 +145,16 @@ class Carto(AbstractWorker):
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
             geom_column = self.geom_cache[table]['geometry']
             if geom_column:
+                if not out_sr: 
+                    out_sr = self.DEFAULT_SRID
                 subq_select += psql.SQL(
-                    "ST_Transform({geom_column}, 4326) AS shape_1984, "
-                ).format(geom_column=psql.Identifier(geom_column))
+                    "ST_Transform({geom_column}, {out_sr}) AS geojson_shape, "
+                ).format(
+                    geom_column=psql.Identifier(geom_column),
+                    out_sr=psql.Literal(out_sr),
+                )
             else: 
-                subq_select += psql.SQL("NULL AS shape_1984, ")
+                subq_select += psql.SQL("NULL AS geojson_shape, ")
             if fields: 
                 field_list = [field.strip() for field in fields.split(",")]
                 fields_composed = psql.SQL(', ').join([psql.Identifier(field) for field in field_list])

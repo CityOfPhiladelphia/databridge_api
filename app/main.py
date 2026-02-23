@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, HTTPException
 from contextlib import asynccontextmanager
 from enum import Enum
 import aiohttp
@@ -93,6 +93,19 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return response
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    '''Overwrite default FastAPI HTTP Error to return consistent with JSON:API Spec'''
+    links = Links(self=str(request.url))
+    error = Error(code=exc.status_code, title=exc.headers['title'], detail=exc.detail)
+    rv = ReturnJson(links=links, errors=[error])
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content=rv.model_dump(mode="json", exclude_none=True),
+    )
+    return response
+
+
 @ app.get("/", tags=["Routes"])
 async def root() -> dict[str, list[str]]:
     return {
@@ -132,6 +145,12 @@ async def get_data(
             description=f"Limit to the number of records to return. Not used if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions('limit')}"
         ),
     ] = None,
+    out_sr: Annotated[
+        int,
+        Query(
+            description=f"Spatial Reference to return geometric records in. Not used if dataset is not geometric, or `count_only` or `sql` parameters are provided.{make_param_api_descriptions('count_only')}"
+        ),
+    ] = False,
     count_only: Annotated[
         bool,
         Query(
@@ -155,12 +174,14 @@ async def get_data(
     """Use this endpoint to retrieve data from the available
     services. To select an API service, pass the query parameter `service=<service>`,
     otherwise the first API service to locate the table will be used.
-    \nParameters not relevant to a specific service will be ignored."""
+    \nParameters are case-sensitive and those not relevant to a specific service 
+    will be ignored."""
     params = {
         'table': table,
         'fields': fields,
         'where': where,
         'limit': limit,
+        'out_sr': out_sr, 
         'count_only': count_only, 
         'sql': sql,
         'session': session,
@@ -168,21 +189,26 @@ async def get_data(
     }
     if sql: 
         if service and MAP_STR_TO_API[service.lower()] != carto:
-            links = Links(self=str(request.url))
-            error = Error(
-                code="400",
-                title='Bad Request',
-                detail="sql parameter can only be used with `service=carto`",
+            raise HTTPException(
+                status_code=400,
+                detail="SQL parameter can only be used with `service=carto`",
+                headers={"title": "Bad Request"},
             )
-            rv = ReturnJson(links=links, errors=[error])
-            return generate_final_response(rv)
         rv = await carto.get(**params)
         return generate_final_response(rv)
     if not service: 
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
         for api in MAP_API_TO_PARAMS:
-            rv = await api.get(**params)
+            if table: 
+                rv = await api.get(**params)
+            else: 
+                raise HTTPException(
+                    status_code=400,
+                    detail="'table' or 'sql' parameters are required",
+                    headers={"title": "Bad Request"},
+                )
+            
             if not rv.errors: 
                 rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
                 return rv
@@ -191,9 +217,16 @@ async def get_data(
         return generate_final_response(rv_combined)
     else: 
         api = MAP_STR_TO_API[service.lower()]
-        if count_only: 
-            rv = await api.get_count(**params)
-        else: 
-            rv = await api.get(**params) 
+        if table: 
+            if count_only: 
+                rv = await api.get_count(**params)
+            else: 
+                    rv = await api.get(**params) 
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="'table' or 'sql' parameters are required",
+                headers={"title": "Bad Request"},
+            )
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
         return generate_final_response(rv)

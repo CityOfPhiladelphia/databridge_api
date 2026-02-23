@@ -7,7 +7,7 @@ geojson as (
         (
             ST_AsGeoJSON(
                 subq.*,
-                geom_column => 'shape_1984',
+                geom_column => 'geojson_shape',
                 id_column => 'geojson_id'
             ) :: jsonb
         ) AS feature

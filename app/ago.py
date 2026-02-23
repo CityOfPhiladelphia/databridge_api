@@ -57,6 +57,7 @@ class Ago(AbstractWorker):
         where: str | None,
         limit: int | None,
         count_only: bool | None,
+        out_sr: int | None, 
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -68,9 +69,12 @@ class Ago(AbstractWorker):
             fields = '*'
         else: 
             fields = 'objectid, ' + fields
+        if not out_sr: 
+            out_sr = self.DEFAULT_SRID
         params = {
             "where": where,
             "outFields": fields,
+            "outSR": out_sr,
             "orderByFields": 'objectid', 
             "f": "geojson",
         }

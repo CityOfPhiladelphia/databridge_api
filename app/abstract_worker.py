@@ -56,6 +56,7 @@ class AbstractWorker(ABC):
     See https://www.geeksforgeeks.org/factory-method-python-design-patterns/"""
     CACHE_DURATION = dt.timedelta(minutes=15)
     MAX_RESPONSE_SIZE = 2 * 1024 * 1024 # 2MB response limit to not crash user systems (2MB of data expands to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
+    DEFAULT_SRID = 4326
 
     def __init__(self): 
         pass

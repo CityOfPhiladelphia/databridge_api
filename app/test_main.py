@@ -149,6 +149,28 @@ def test_valid_count_only(client, service: str):
     assert rv["meta"]["records_total"] == 5
 
 
+@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+def test_valid_srid(client, service: str):
+    '''Test that the `srid` parameter works'''
+    params = {
+        "table": GOOD_TABLES[0],
+        "limit": 2,
+        "out_sr": 4326,
+        "service": service,
+    }
+    response = client.get('/get', params=params)
+    rv = response.json()
+    assert response.status_code == 200
+    data = rv['data']
+    
+    params['out_sr'] = 2272
+    response2 = client.get('/get', params=params)
+    rv2 = response2.json()
+    assert response2.status_code == 200
+    data2 = rv2['data']
+    assert data != data2
+
+
 def test_valid_sql(client):
     '''Test that the `sql` parameter works, only on Carto'''
     params = {
@@ -174,6 +196,23 @@ def test_valid_no_service(client, table: str):
 ################################################################################
 # Invalid Parameter Tests # 
 ################################################################################
+
+def test_invalid_nothing(client):
+    '''Test that the API fails if no `sql` or `table` parameters passed''' 
+    response = client.get('/get')
+    assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert 'errors' in data
+
+
+def test_invalid_nothing2(client):
+    '''Test that the API fails if no `sql` or `table` parameters passed''' 
+    params = {'service': 'ago'}
+    response = client.get('/get', params=params)
+    assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert 'errors' in data
+
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
 def test_invalid_table(client, service: str):
