@@ -8,7 +8,7 @@ from typing import Annotated
 from .carto import Carto
 from .ago import Ago
 from .abstract_worker import AbstractWorker, ReturnJson, Links, Error
-from .utils import description
+from .utils import description, generate_final_response
 
 
 class SessionManager:
@@ -18,7 +18,7 @@ class SessionManager:
         self.session: aiohttp.ClientSession = None
 
     async def start(self):
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
 
     async def stop(self):
         if self.session:
@@ -135,13 +135,13 @@ async def get_data(
     count_only: Annotated[
         bool,
         Query(
-            description=f"Return record count of provided query. {make_param_api_descriptions('count_only')}"
+            description=f"Return record count of provided query. Not used if `sql` parameter is provided.{make_param_api_descriptions('count_only')}"
         ),
     ] = False,
     sql: Annotated[
         str | None,
         Query(
-            description=f"Raw SQL string to use when retrieving data. Not used if `count_only` parmater is provided.{make_param_api_descriptions('sql')}"
+            description=f"Raw SQL string to use when retrieving data. Users should request no more than ~2,000 rows to avoid an `HTTP 413` error.{make_param_api_descriptions('sql')}"
         ),
     ] = None,
     service: Annotated[
@@ -166,6 +166,18 @@ async def get_data(
         'session': session,
         'request': request, 
     }
+    if sql: 
+        if service and MAP_STR_TO_API[service.lower()] != carto:
+            links = Links(self=str(request.url))
+            error = Error(
+                code="400",
+                title='Bad Request',
+                detail="sql parameter can only be used with `service=carto`",
+            )
+            rv = ReturnJson(links=links, errors=[error])
+            return generate_final_response(rv)
+        rv = await carto.get(**params)
+        return generate_final_response(rv)
     if not service: 
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
@@ -176,11 +188,7 @@ async def get_data(
                 return rv
             else:
                 rv_combined.errors.append(rv.errors[0])
-        response = JSONResponse(
-            status_code=int(rv.errors[0].code),
-            content=rv_combined.model_dump(mode="json", exclude_none=True),
-        )
-        return response
+        return generate_final_response(rv_combined)
     else: 
         api = MAP_STR_TO_API[service.lower()]
         if count_only: 
@@ -188,11 +196,4 @@ async def get_data(
         else: 
             rv = await api.get(**params) 
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
-        if not rv.errors:
-            return rv
-        else:
-            rv = JSONResponse(
-                status_code=int(rv.errors[0].code),
-                content=rv.model_dump(mode="json", exclude_none=True),
-            )
-            return rv
+        return generate_final_response(rv)

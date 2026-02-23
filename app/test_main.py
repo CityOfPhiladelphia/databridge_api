@@ -245,13 +245,24 @@ def test_invalid_count_only(client, service: str, ):
 
 @pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
 def test_invalid_sql(client, service: str):
-    """Test that the API fails if an invalid `limit` parameter is passed"""
+    """Test that the API fails if invalid `sql` parameter is passed"""
     params = {
         'sql': 'SELECT * FROM ANSTEHUSANTH', 
         'service': service
     }
     response = client.get('/get', params=params)
     assert response.status_code >=400 and response.status_code < 500
+    data = response.json()
+    assert "errors" in data
+
+
+def test_invalid_sql_large_payload(client):
+    """Test that the API fails if too large of a dataset is requsted"""
+    params = {
+        'sql': f'SELECT * FROM {GOOD_TABLES[0]}', 
+    }
+    response = client.get('/get', params=params)
+    assert response.status_code == 413
     data = response.json()
     assert "errors" in data
 

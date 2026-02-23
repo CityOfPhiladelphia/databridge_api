@@ -176,13 +176,21 @@ class Carto(AbstractWorker):
         async with session.get(
             self.base_url, params=params, headers=self.auth_header
         ) as response:
-            return await self.normalize_rv(request, response, limit)
+            return await self.normalize_rv(request, response, limit, sql)
 
     async def normalize_rv(
-        self, request: Request, response: aiohttp.ClientResponse, limit: int
+        self,
+        request: Request,
+        response: aiohttp.ClientResponse,
+        limit: int,
+        sql: str | None,
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
+        if int(response.headers['Content-Length']) >= self.MAX_RESPONSE_SIZE: 
+            error = Error(code="413", title="Content Too Large", detail='Request less data; preferably 2,000 rows or fewer.')
+            rv = ReturnJson(errors=[error], links=links, meta=meta)
+            return rv
         data = await response.json()
         if response.ok: 
             try: 
@@ -196,7 +204,7 @@ class Carto(AbstractWorker):
                 gjfc = GeoJsonFeatureCollection(features=geojsons)
 
             meta.record_count = len(gjfc.features)
-            if meta.record_count == limit:
+            if not sql and meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)
                 links.next = next_url
             rv = ReturnJson(data=gjfc, links=links, meta=meta)

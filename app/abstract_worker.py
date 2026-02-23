@@ -50,10 +50,12 @@ class ReturnJson(BaseModel, validate_assignment=True):
     links: Links = None
     meta: Meta = None
 
+
 class AbstractWorker(ABC): 
     """Abstract base class to ensure worker classes are properly implemented
     See https://www.geeksforgeeks.org/factory-method-python-design-patterns/"""
     CACHE_DURATION = dt.timedelta(minutes=15)
+    MAX_RESPONSE_SIZE = 2 * 1024 * 1024 # 2MB response limit to not crash user systems (2MB of data expands to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
 
     def __init__(self): 
         pass
