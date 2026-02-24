@@ -22,9 +22,11 @@ class Ago(AbstractWorker):
             where = '1=1'
         params = {
             "where": where,
-            "returnCountOnly": 'true', 
+            "returnCountOnly": "true",
             "f": "geojson",
         }
+        if kwargs['token']: 
+            params['token'] = kwargs["token"].lstrip("Bearer ")
         async with session.get(url, params=params) as response:
             return await self.normalize_rv_count(request, response)
 
@@ -32,13 +34,26 @@ class Ago(AbstractWorker):
         self, request: Request, response: aiohttp.ClientResponse
     ) -> ReturnJson:
         links = Links(self=str(request.url))
-        meta = Meta(service=self.name, service_url=str(response.url))
+        service_url = self.mask_service_url(request, response)
+        meta = Meta(service=self.name, service_url=service_url)
         # AGO REST API doesn't respect HTTP status codes
         if response.ok: 
             data = await response.json()
-            meta.records_total = data['properties']['count']
-            rv = ReturnJson(links=links, meta=meta)
-            return rv
+            if 'error' not in data: 
+                meta.records_total = data['properties']['count']
+                rv = ReturnJson(links=links, meta=meta)
+                return rv
+            else: 
+                title = f'{self.name} Error'
+                if data['error']['message']: 
+                    title += f': {data['error']['message']}'
+                error = Error(
+                    code=data['error']['code'], 
+                    title=title, 
+                    detail=data['error']['details'][0]
+                )
+                rv = ReturnJson(errors=[error], links=links, meta=meta)
+                return rv
         else:
             error_detail = await response.text()
             error = Error(
@@ -80,6 +95,8 @@ class Ago(AbstractWorker):
         }
         if limit: 
             params["resultRecordCount"] = limit
+        if kwargs['token']: 
+            params['token'] = kwargs["token"].lstrip("Bearer ")
         async with session.get(url, params=params) as response:
             return await self.normalize_rv(request, response)
 
@@ -87,7 +104,8 @@ class Ago(AbstractWorker):
         self, request: Request, response: aiohttp.ClientResponse
     ) -> ReturnJson:
         links = Links(self=str(request.url))
-        meta = Meta(service=self.name, service_url=str(response.url))
+        service_url = self.mask_service_url(request, response)
+        meta = Meta(service=self.name, service_url=service_url)
         # AGO REST API doesn't respect HTTP status codes
         if response.ok: 
             data = await response.json()
@@ -124,3 +142,21 @@ class Ago(AbstractWorker):
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
+
+    def mask_service_url(self, request: Request, response: aiohttp.ClientResponse) -> str: 
+        """Mask a Bearer authorization token in the service_url for safe logging
+
+        Args:
+            request (Request): User-initiated request
+            response (aiohttp.ClientResponse): Downstream API service response
+
+        Returns:
+            str: Safely-masked service url
+        """        
+        service_url = str(response.url)
+        if 'authorization' in request.headers: 
+            auth = request.headers['authorization']
+            token = auth.lstrip('Bearer ')
+            service_url = service_url.replace(token, '********')
+        return service_url
+    

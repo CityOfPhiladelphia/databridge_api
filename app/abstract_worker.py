@@ -8,35 +8,41 @@ from typing import Annotated
 from collections.abc import Callable
 
 
-class GeoJsonGeometry(BaseModel): 
+class GeoJsonGeometry(BaseModel):
+    """GeoJSON Feature Geometry""" 
     type: str
     coordinates: list
 
 
 class GeoJsonFeature(BaseModel): 
+    """GeoJSON Feature"""
     type: str = 'Feature'
     id: Annotated[str, BeforeValidator(str)] | None = None
     properties: dict
     geometry: GeoJsonGeometry | None = None
 
 
-class GeoJsonFeatureCollection(BaseModel): 
+class GeoJsonFeatureCollection(BaseModel):
+    """GeoJSON Feature Collection""" 
     type: str = 'FeatureCollection'
     features: list[GeoJsonFeature]
 
 
 class Error(BaseModel): 
+    """JSON:API spec for returning errors"""
     code: Annotated[str, BeforeValidator(str)]
     title: str = None
     detail: str = None
 
 
 class Links(BaseModel, validate_assignment=True): 
+    """JSON:API spec for returning URLs"""
     self: HttpUrl
     next: HttpUrl = None
 
 
 class Meta(BaseModel, validate_assignment=True): 
+    """Additional information generated for the user"""
     service: str
     service_url: HttpUrl
     service_available_query_parameters: list[str] = None
@@ -45,6 +51,7 @@ class Meta(BaseModel, validate_assignment=True):
 
 
 class ReturnJson(BaseModel, validate_assignment=True): 
+    """JSON:API spec for returning data"""
     data: GeoJsonFeatureCollection = None # Either data or errors should be returned
     errors: list[Error] = None
     links: Links = None
@@ -57,24 +64,27 @@ class AbstractWorker(ABC):
     CACHE_DURATION = dt.timedelta(minutes=15)
     MAX_RESPONSE_SIZE = 2 * 1024 * 1024 # 2MB response limit to not crash user systems (2MB of data expands to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
     DEFAULT_SRID = 4326
-
-    def __init__(self): 
-        pass
     
     @abstractmethod
-    async def get_count(self) -> ReturnJson: 
+    async def get_count(self) -> ReturnJson:
+        """Get the row count of a dataset from the API. Implementation is API-specific""" 
         raise NotImplementedError
 
     @abstractmethod
     async def normalize_rv_count(self) -> ReturnJson: 
+        """Normalize the data received from the API into a uniform response.
+        Implementation is API-specific"""
         raise NotImplementedError
 
     @abstractmethod
     async def get(self) -> ReturnJson: 
+        """Get data from the API. Implementation is API-specific"""
         raise NotImplementedError
     
     @abstractmethod
-    async def normalize_rv(data) -> ReturnJson:
+    async def normalize_rv(self) -> ReturnJson:
+        """Normalize the data received from the API into a uniform response.
+        Implementation is API-specific"""
         raise NotImplementedError
 
     def determine_function_params(self, func: Callable) -> list[str]: 
