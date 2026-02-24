@@ -20,6 +20,11 @@ class Carto(AbstractWorker):
         self.geom_cache = {}
 
     def get_public_token(self) -> str: 
+        """Retrieve the public token necessary for accessing Carto V3 resources
+
+        Returns:
+            str: Token
+        """        
         secret = cgs.get_secrets(self.secret_name)
         token = secret[self.secret_name]['Public API Key']
         return token
@@ -30,16 +35,16 @@ class Carto(AbstractWorker):
                 return self.geom_cache[table]
         return None
     
-    async def get_geometry(self, table: str, session: aiohttp.ClientSession, **kwargs): 
-        """ Determine if a table in Carto is geometric or not. This info changes 
-        the SQL query sent to Carto to retrieve data 
+    async def get_geometry(self, table: str, session: aiohttp.ClientSession, **kwargs) -> ReturnJson: 
+        """Determine if a table in Carto is geometric or not. This info changes
+        the SQL query sent to Carto to retrieve data
 
         Args:
-            table (str): _description_
-            session (aiohttp.ClientSession): _description_
+            table (str): Name of table
+            session (aiohttp.ClientSession): Client Session to query Carto API
 
         Returns:
-            _type_: _description_
+            ReturnJson: JSON:API spec for returning data
         """        
         cache_result = await self.check_geom_cache(table)
         if not cache_result:
