@@ -7,7 +7,8 @@ import aiohttp
 from typing import Annotated
 from .carto import Carto
 from .ago import Ago
-from .abstract_worker import AbstractWorker, ReturnJson, Links, Error
+from .abstract_worker import AbstractWorker, GeomCache
+from .models import ReturnJson, Links, Error
 from .utils import description, generate_final_response
 
 
@@ -30,6 +31,8 @@ class SessionManager:
 
 
 session_manager = SessionManager()
+geom_cache = GeomCache()
+geom_cache.update()
 carto = Carto()
 ago = Ago()
 MAP_STR_TO_API: dict[str, AbstractWorker] = {'ago': ago, 'carto': carto} # Note this is the order searched if no API is specified. 
@@ -192,6 +195,7 @@ async def get_data(
         'token': token,
         'session': session,
         'request': request, 
+        'geom_cache': geom_cache
     }
     if sql: 
         if service and MAP_STR_TO_API[service.lower()] != carto:

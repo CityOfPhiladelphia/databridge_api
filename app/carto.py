@@ -2,7 +2,15 @@ import aiohttp
 import datetime as dt
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
-from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, GeoJsonFeature
+from .abstract_worker import AbstractWorker
+from .models import (
+    ReturnJson,
+    Meta,
+    Links,
+    Error,
+    GeoJsonFeatureCollection,
+    GeoJsonFeature,
+)
 from .utils_carto import FULL_QUERY
 import citygeo_secrets as cgs
 
@@ -17,7 +25,6 @@ class Carto(AbstractWorker):
         self.secret_name = 'CARTO - New Platform'
         self.public_token = self.get_public_token()
         self.auth_header = {'Authorization': f'Bearer {self.public_token}'}
-        self.geom_cache = {}
 
     def get_public_token(self) -> str: 
         """Retrieve the public token necessary for accessing Carto V3 resources
@@ -28,60 +35,6 @@ class Carto(AbstractWorker):
         secret = cgs.get_secrets(self.secret_name)
         token = secret[self.secret_name]['Public API Key']
         return token
-    
-    async def check_geom_cache(self, table: str, **kwargs): 
-        if table in self.geom_cache: 
-            if dt.datetime.now() - self.geom_cache[table]['retrieved_at'] <= self.CACHE_DURATION: 
-                return self.geom_cache[table]
-        return None
-    
-    async def get_geometry(self, table: str, session: aiohttp.ClientSession, **kwargs) -> ReturnJson: 
-        """Determine if a table in Carto is geometric or not. This info changes
-        the SQL query sent to Carto to retrieve data
-
-        Args:
-            table (str): Name of table
-            session (aiohttp.ClientSession): Client Session to query Carto API
-
-        Returns:
-            ReturnJson: JSON:API spec for returning data
-        """        
-        cache_result = await self.check_geom_cache(table)
-        if not cache_result:
-            query = psql.SQL("SELECT * FROM {table} LIMIT 1").format(
-                table=psql.Identifier(table)
-            )
-            params = {'q': query.as_string()}
-            async with session.get(
-                self.base_url, params=params, headers=self.auth_header
-            ) as response:
-                return await self.normalize_rv_geometry(table, response)
-
-    async def normalize_rv_geometry(
-        self, table: str, response: aiohttp.ClientResponse
-    ) -> ReturnJson:
-        meta = Meta(service=self.name, service_url=str(response.url))
-        data = await response.json()
-        if response.ok:
-            geometry = None
-            for col in data['schema']: 
-                if col['type'] == 'geometry': 
-                    geometry = col['name']
-                    break
-            self.geom_cache[table] = {
-                "geometry": geometry,
-                "retrieved_at": dt.datetime.now(),
-            }
-            rv = ReturnJson(meta=meta)
-            return rv
-        else:
-            error = Error(
-                code=response.status,
-                title=f"{self.name} Error",
-                detail=data["error"],
-            )
-            rv = ReturnJson(errors=[error], meta=meta)
-            return rv
     
     async def get_count(
         self,
@@ -143,12 +96,18 @@ class Carto(AbstractWorker):
         if not sql: 
             # Must happen first as we don't know if Carto table is geometric, which 
             # affects geojson SQL query structure
-            rv_geom = await self.get_geometry(table, session)  
-            if rv_geom and rv_geom.errors: 
-                return rv_geom
-            
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
-            geom_column = self.geom_cache[table]['geometry']
+            try: 
+                geom_column = kwargs['geom_cache'].cache[table]['geom_column']
+            except KeyError:
+                links = Links(self=str(request.url))
+                error = Error(
+                    code=404,
+                    title="Not Found",
+                    detail=f"Schema not found for table '{table}'",
+                )
+                meta = Meta(service=self.name)
+                return ReturnJson(errors=[error], links=links, meta=meta)
             if geom_column:
                 if not out_sr: 
                     out_sr = self.DEFAULT_SRID

@@ -1,4 +1,4 @@
-from .abstract_worker import ReturnJson
+from .models import ReturnJson
 from fastapi.responses import JSONResponse
 
 description = """

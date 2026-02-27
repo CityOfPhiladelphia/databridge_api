@@ -1,6 +1,7 @@
 import aiohttp
 from fastapi import Request
-from .abstract_worker import AbstractWorker, ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
+from .abstract_worker import AbstractWorker
+from .models import ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 
 class Ago(AbstractWorker):
     
@@ -26,7 +27,7 @@ class Ago(AbstractWorker):
             "f": "geojson",
         }
         if kwargs['token']: 
-            params['token'] = kwargs["token"].lstrip("Bearer ")
+            params['token'] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params) as response:
             return await self.normalize_rv_count(request, response)
 
@@ -96,7 +97,7 @@ class Ago(AbstractWorker):
         if limit: 
             params["resultRecordCount"] = limit
         if kwargs['token']: 
-            params['token'] = kwargs["token"].lstrip("Bearer ")
+            params['token'] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params) as response:
             return await self.normalize_rv(request, response)
 
@@ -156,7 +157,7 @@ class Ago(AbstractWorker):
         service_url = str(response.url)
         if 'authorization' in request.headers: 
             auth = request.headers['authorization']
-            token = auth.lstrip('Bearer ')
+            token = auth.removeprefix('Bearer ')
             service_url = service_url.replace(token, '********')
         return service_url
     

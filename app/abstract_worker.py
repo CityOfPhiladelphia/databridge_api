@@ -1,61 +1,13 @@
 from __future__ import annotations
+import os
+import json
+from .models import ReturnJson, GeoJsonFeature
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, HttpUrl, BeforeValidator
 from fastapi import Request
 import inspect
+import subprocess
 import datetime as dt
-from typing import Annotated
 from collections.abc import Callable
-
-
-class GeoJsonGeometry(BaseModel):
-    """GeoJSON Feature Geometry""" 
-    type: str
-    coordinates: list
-
-
-class GeoJsonFeature(BaseModel): 
-    """GeoJSON Feature"""
-    type: str = 'Feature'
-    id: Annotated[str, BeforeValidator(str)] | None = None
-    properties: dict
-    geometry: GeoJsonGeometry | None = None
-
-
-class GeoJsonFeatureCollection(BaseModel):
-    """GeoJSON Feature Collection""" 
-    type: str = 'FeatureCollection'
-    features: list[GeoJsonFeature]
-
-
-class Error(BaseModel): 
-    """JSON:API spec for returning errors"""
-    code: Annotated[str, BeforeValidator(str)]
-    title: str = None
-    detail: str = None
-
-
-class Links(BaseModel, validate_assignment=True): 
-    """JSON:API spec for returning URLs"""
-    self: HttpUrl
-    next: HttpUrl = None
-
-
-class Meta(BaseModel, validate_assignment=True): 
-    """Additional information generated for the user"""
-    service: str
-    service_url: HttpUrl
-    service_available_query_parameters: list[str] = None
-    record_count: int = None
-    records_total: int = None
-
-
-class ReturnJson(BaseModel, validate_assignment=True): 
-    """JSON:API spec for returning data"""
-    data: GeoJsonFeatureCollection = None # Either data or errors should be returned
-    errors: list[Error] = None
-    links: Links = None
-    meta: Meta = None
 
 
 class AbstractWorker(ABC): 
@@ -64,6 +16,7 @@ class AbstractWorker(ABC):
     CACHE_DURATION = dt.timedelta(minutes=15)
     MAX_RESPONSE_SIZE = 2 * 1024 * 1024 # 2MB response limit to not crash user systems (2MB of data expands to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
     DEFAULT_SRID = 4326
+
     
     @abstractmethod
     async def get_count(self) -> ReturnJson:
@@ -142,3 +95,44 @@ class AbstractWorker(ABC):
             new_where = next_where
         next_url = str(old_url.include_query_params(where=new_where))
         return next_url
+
+
+class GeomCache(): 
+
+    def __init__(self): 
+        self.script = "./clone_databridge_schemas.sh"
+        self.folder = "./databridge-schemas"
+        self.cache: dict[str,str|None] = {}
+
+    def update(self):
+        self.update_local_repo()
+        self.search_recursively(self.folder)
+
+    def search_recursively(self, path): 
+        for file in os.listdir(path): 
+            new_path = os.path.join(path, file)
+            if os.path.isfile(new_path) and new_path.endswith('.json'): 
+                table = os.path.splitext(os.path.basename(new_path))[0]
+                assert table not in self.cache.keys()
+                with open(new_path) as f: 
+                    table_schema = json.load(f)
+                geom_column = None
+                for field in table_schema['fields']: 
+                    if field['type'] == 'geometry': 
+                        assert table not in self.cache
+                        geom_column = field['name']
+                self.cache[table] = {'geom_column': geom_column}
+            elif os.path.isdir(new_path): 
+                self.search_recursively(new_path)
+
+    def update_local_repo(self): 
+        p = subprocess.run(
+            self.script, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        try: 
+            p.check_returncode()
+        except subprocess.CalledProcessError: 
+            print('GeomCache update subprocess error output:\n')
+            print(p.stdout.decode())
+            raise
+
