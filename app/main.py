@@ -5,11 +5,14 @@ from contextlib import asynccontextmanager
 from enum import Enum
 import aiohttp
 from typing import Annotated
+import citygeo_secrets as cgs
+import secrets
 from .carto import Carto
 from .ago import Ago
 from .abstract_worker import AbstractWorker, GeomCache
 from .models import ReturnJson, Links, Error
 from .utils import description, generate_final_response
+from . import config
 
 
 class SessionManager:
@@ -40,6 +43,8 @@ MAP_API_TO_PARAMS: dict[AbstractWorker, list[str]] = {}
 for api in MAP_STR_TO_API.values(): 
     MAP_API_TO_PARAMS[api] = api.determine_function_params(api.get)
 
+secret = cgs.get_secrets(config.KEEPER_SECRET)
+API_TOKEN = secret[config.KEEPER_SECRET]['password']
 
 def make_param_api_descriptions(param: str) -> str: 
     """Create the description line noting for each query parameter which APIs accept it
@@ -240,3 +245,25 @@ async def get_data(
             )
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
         return generate_final_response(rv)
+
+
+@app.post('/update_cache', include_in_schema=False)
+async def update_cache(request: Request): 
+    """A private endpoint intended for use only by GitHub Actions to alert this 
+    API that the `databridge-schemas` repo has been updated so that this API can 
+    update its cache
+    """    
+    try: 
+        print(f'{request.headers = }')
+        tokens_match = secrets.compare_digest(request.headers['token'], API_TOKEN)
+    except KeyError: 
+        tokens_match = False
+    if tokens_match: 
+        geom_cache.update()
+        return f"Cache successfully updated. {len(geom_cache.cache):,} tables in cache."
+    else: 
+        raise HTTPException(
+            status_code=403,
+            detail="Pass valid token in request header using format 'token: <token>'",
+            headers={"title": "Invalid token"},
+        )
