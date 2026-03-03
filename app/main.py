@@ -254,7 +254,6 @@ async def update_cache(request: Request):
     update its cache
     """    
     try: 
-        print(f'{request.headers = }')
         tokens_match = secrets.compare_digest(request.headers['token'], API_TOKEN)
     except KeyError: 
         tokens_match = False

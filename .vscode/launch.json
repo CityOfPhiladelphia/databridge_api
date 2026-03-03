@@ -19,14 +19,25 @@
             "module": "uvicorn",
             "args": [
                 "app.main:app",
-                "--reload", 
+                "--reload",
                 "--host",
-                "0.0.0.0", 
+                "0.0.0.0",
                 "--port",
                 "8000"
             ],
-            "jinja": true, 
+            "jinja": true,
             "justMyCode": false
-        }
+        },
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "--path",
+                "./databridge-schemas"
+            ]
+        },
     ]
 }
