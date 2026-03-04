@@ -114,6 +114,7 @@ class GeomCache():
         """        
         self.update_local_repo()
         self.search_recursively(self.folder)
+        print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
     def update_local_repo(self): 
         """Update the local copy of the databridge-schemas repository. Note that 
