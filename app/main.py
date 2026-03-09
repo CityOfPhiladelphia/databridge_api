@@ -116,12 +116,6 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     return response
 
 
-@ app.get("/", tags=["Routes"])
-async def root() -> RedirectResponse:
-    """Redirect to the `/docs` endpoint"""
-    return RedirectResponse(url='/docs')
-
-
 @app.get(
     "/get",
     response_model=ReturnJson,
@@ -133,56 +127,71 @@ async def get_data(
     table: Annotated[
         str | None,
         Query(
-            description=f"Name of table to retrieve. Either `table` or `sql` parameter is required. Ignored if `sql` parameter is provided.{make_param_api_descriptions('table')}"
+            description=f"""Name of table to retrieve. Either `table` or `sql` 
+            parameter is required. Ignored if `sql` parameter is provided.
+            {make_param_api_descriptions('table')}"""
         ),
     ] = None,
     fields: Annotated[
         str | None,
         Query(
-            description=f"List of fields to retrieve, taking the form _field_1_,_field_2_,... Ignored if `sql` or `count_only` parameters are provided.{make_param_api_descriptions('fields')}"
+            description=f"""List of fields to retrieve, taking the form 
+            _field_1_,_field_2_,... To receive all fields, do not include this parameter. 
+            Writing fields=* will return an error. Ignored if `sql` or 
+            `count_only` parameters are provided.{make_param_api_descriptions('fields')}"""
         ),
     ] = None,
     where: Annotated[
         str | None,
         Query(
-            description=f"An SQL _WHERE_ clause to filter data. Ignored if `sql` parameter is provided.{make_param_api_descriptions('where')}"
+            description=f"""An SQL _WHERE_ clause to filter data. Ignored if 
+            `sql` parameter is provided.{make_param_api_descriptions('where')}"""
         ),
     ] = None,
     limit: Annotated[
         int | None,
         Query(
-            description=f"Limit to the number of records to return. Ignored if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions('limit')}"
+            description=f"""Limit to the number of records to return. AGO enforces
+            a limit specific to each table (frequently 2,000 records); for Carto, this API 
+            enforces a limit of 1,000 records as Carto otherwise does not have 
+            limits. Any user-provided limit smaller than those takes precedence. 
+            Ignored if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions("limit")}"""
         ),
     ] = None,
     out_sr: Annotated[
-        int | None,
+        int,
         Query(
-            description=f"Spatial Reference to return geometric records in. Ignored if dataset is not geometric, or `count_only` or `sql` parameters are provided.{make_param_api_descriptions('count_only')}"
+            description=f"""Spatial Reference to return geometric records in. 
+            Default SRID is WGS84. Ignored if dataset is not geometric, or `sql` or `count_only` 
+            parameters are provided.{make_param_api_descriptions('count_only')}"""
         ),
-    ] = None,
+    ] = AbstractWorker.DEFAULT_SRID,
     count_only: Annotated[
         bool,
         Query(
-            description=f"Return record count of provided query. Ignored if `sql` parameter is provided.{make_param_api_descriptions('count_only')}"
+            description=f"""Return record count of provided query. Ignored if 
+            `sql` parameter is provided.{make_param_api_descriptions('count_only')}"""
         ),
     ] = False,
     sql: Annotated[
         str | None,
         Query(
-            description=f"Raw SQL string to use when retrieving data. Users should request no more than ~2,000 rows to avoid an `HTTP 413` error. Either `table` or `sql` parameter is required.{make_param_api_descriptions('sql')}"
+            description=f"""Raw SQL string to use when retrieving data. Users 
+            should request no more than ~2,000 rows to avoid an `HTTP 413` error. 
+            Either `table` or `sql` parameter is required.{make_param_api_descriptions('sql')}"""
         ),
     ] = None,
     service: Annotated[
         Service | None,
         Query(
-            description="Name of API service to use. If not provided, the first API service to locate the table will be used."
+            description="""Name of API service to use. If not provided, the first 
+            API service to locate the table will be used."""
         ),
     ] = None,
     session: aiohttp.ClientSession = Depends(session_manager),
 ) -> ReturnJson | JSONResponse: 
     """Use this endpoint to retrieve data from the available
-    services. To select an API service, pass the query parameter `service=<service>`,
-    otherwise the first API service to locate the table will be used.
+    services. 
     \nParameters are case-sensitive and those not relevant to a specific service 
     will be ignored."""
     if 'authorization' in request.headers: 
@@ -245,6 +254,12 @@ async def get_data(
             )
         rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
         return generate_final_response(rv)
+
+
+@app.get("/", tags=["Routes"])
+async def root() -> RedirectResponse:
+    """Redirect to the `/docs` endpoint"""
+    return RedirectResponse(url="/docs")
 
 
 @app.post('/update_cache', include_in_schema=False)

@@ -108,8 +108,6 @@ class Carto(AbstractWorker):
                 meta = Meta(service=self.name)
                 return ReturnJson(errors=[error], links=links, meta=meta)
             if geom_column:
-                if not out_sr: 
-                    out_sr = self.DEFAULT_SRID
                 subq_select += psql.SQL(
                     "ST_Transform({geom_column}, {out_sr}) AS geojson_shape, "
                 ).format(

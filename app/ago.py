@@ -85,8 +85,6 @@ class Ago(AbstractWorker):
             fields = '*'
         else: 
             fields = 'objectid, ' + fields
-        if not out_sr: 
-            out_sr = self.DEFAULT_SRID
         params = {
             "where": where,
             "outFields": fields,
