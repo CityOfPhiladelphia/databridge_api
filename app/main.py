@@ -2,73 +2,28 @@ from fastapi import FastAPI, Depends, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
 from contextlib import asynccontextmanager
-from enum import Enum
 import aiohttp
+from asyncio import TimeoutError
 from typing import Annotated
-import citygeo_secrets as cgs
 import secrets
-from .carto import Carto
-from .ago import Ago
-from .abstract_worker import AbstractWorker, GeomCache
 from .models import ReturnJson, Links, Error
-from .utils import description, generate_final_response
-from . import config
-
-
-class SessionManager:
-    """A class to manage the aiohttp session for use by the FastAPI app
-    """    
-    def __init__(self):
-        self.session: aiohttp.ClientSession = None
-
-    async def start(self):
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-
-    async def stop(self):
-        if self.session:
-            await self.session.close()
-    
-    # This is the function we will use in Depends()
-    def __call__(self) -> aiohttp.ClientSession:
-        return self.session 
+from .utils import (
+    AbstractWorker,
+    Api_Manager,
+    GeomCache,
+    SessionManager,
+    Service,
+    description,
+    generate_final_response,
+    make_param_api_descriptions,
+    api_token,
+)
 
 
 session_manager = SessionManager()
 geom_cache = GeomCache()
-geom_cache.update()
-carto = Carto()
-ago = Ago()
-MAP_STR_TO_API: dict[str, AbstractWorker] = {'ago': ago, 'carto': carto} # Note this is the order searched if no API is specified. 
-MAP_API_TO_PARAMS: dict[AbstractWorker, list[str]] = {}
-for api in MAP_STR_TO_API.values(): 
-    MAP_API_TO_PARAMS[api] = api.determine_function_params(api.get)
+api_manager = Api_Manager()
 
-secret = cgs.get_secrets(config.KEEPER_SECRET)
-API_TOKEN = secret[config.KEEPER_SECRET]['password']
-
-def make_param_api_descriptions(param: str) -> str: 
-    """Create the description line noting for each query parameter which APIs accept it
-
-    Args:
-        param (str): Query parameter
-
-    Returns:
-        str: Markdown-compatible description taking the form "Used by: AGO, Carto, ..."
-    """    
-    s = []
-    for api in MAP_API_TO_PARAMS: 
-        if param in MAP_API_TO_PARAMS[api]: 
-            s.append(api.name)
-    return "\n\n_Used by:_ " + ", ".join(s)
-
-
-class Service(str, Enum): 
-    AGO = 'ago'
-    CARTO = 'carto'
-
-################################################################################
-# All FastAPI code should be written below this point #
-################################################################################
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -128,8 +83,9 @@ async def get_data(
         str | None,
         Query(
             description=f"""Name of table to retrieve. Either `table` or `sql` 
-            parameter is required. Ignored if `sql` parameter is provided.
-            {make_param_api_descriptions('table')}"""
+            parameter is required. Ignored if `sql` parameter is provided. Need an 
+            example tale? Try `table=dor_parcel`. 
+            {make_param_api_descriptions(api_manager, "table")}"""
         ),
     ] = None,
     fields: Annotated[
@@ -138,14 +94,14 @@ async def get_data(
             description=f"""List of fields to retrieve, taking the form 
             _field_1_,_field_2_,... To receive all fields, do not include this parameter. 
             Writing fields=* will return an error. Ignored if `sql` or 
-            `count_only` parameters are provided.{make_param_api_descriptions('fields')}"""
+            `count_only` parameters are provided.{make_param_api_descriptions(api_manager, "fields")}"""
         ),
     ] = None,
     where: Annotated[
         str | None,
         Query(
             description=f"""An SQL _WHERE_ clause to filter data. Ignored if 
-            `sql` parameter is provided.{make_param_api_descriptions('where')}"""
+            `sql` parameter is provided.{make_param_api_descriptions(api_manager, "where")}"""
         ),
     ] = None,
     limit: Annotated[
@@ -155,22 +111,22 @@ async def get_data(
             a limit specific to each table (frequently 2,000 records); for Carto, this API 
             enforces a limit of 1,000 records as Carto otherwise does not have 
             limits. Any user-provided limit smaller than those takes precedence. 
-            Ignored if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions("limit")}"""
+            Ignored if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions(api_manager, "limit")}"""
         ),
     ] = None,
     out_sr: Annotated[
         int,
         Query(
             description=f"""Spatial Reference to return geometric records in. 
-            Default SRID is WGS84. Ignored if dataset is not geometric, or `sql` or `count_only` 
-            parameters are provided.{make_param_api_descriptions('count_only')}"""
+            Default SRID is WGS84 (4326). Ignored if dataset is not geometric, or `sql` or `count_only` 
+            parameters are provided.{make_param_api_descriptions(api_manager, "count_only")}"""
         ),
     ] = AbstractWorker.DEFAULT_SRID,
     count_only: Annotated[
         bool,
         Query(
             description=f"""Return record count of provided query. Ignored if 
-            `sql` parameter is provided.{make_param_api_descriptions('count_only')}"""
+            `sql` parameter is provided.{make_param_api_descriptions(api_manager, "count_only")}"""
         ),
     ] = False,
     sql: Annotated[
@@ -178,20 +134,31 @@ async def get_data(
         Query(
             description=f"""Raw SQL string to use when retrieving data. Users 
             should request no more than ~2,000 rows to avoid an `HTTP 413` error. 
-            Either `table` or `sql` parameter is required.{make_param_api_descriptions('sql')}"""
+            Either `table` or `sql` parameter is required. Need an example? Try 
+            `sql=SELECT * FROM DOR_PARCEL LIMIT 10`.{make_param_api_descriptions(api_manager, "sql")}"""
         ),
     ] = None,
     service: Annotated[
         Service | None,
         Query(
             description="""Name of API service to use. If not provided, the first 
-            API service to locate the table will be used."""
+            API service to locate the table will be used. Ignored if `sql` parameter 
+            is provided."""
         ),
     ] = None,
+    timeout: Annotated[
+        float,
+        Query(
+            description="""Amount of time in seconds to wait for response from downstream APIs 
+            before raising a timeout error""",
+            gt=0,
+            lt=300,
+        ),
+    ] = 30,
     session: aiohttp.ClientSession = Depends(session_manager),
 ) -> ReturnJson | JSONResponse: 
     """Use this endpoint to retrieve data from the available
-    services. 
+    services. At a minimum either the `table` or `sql` parameter is required. 
     \nParameters are case-sensitive and those not relevant to a specific service 
     will be ignored."""
     if 'authorization' in request.headers: 
@@ -208,56 +175,88 @@ async def get_data(
         'sql': sql,
         'token': token,
         'session': session,
+        'timeout': timeout,
         'request': request, 
         'geom_cache': geom_cache
     }
     if sql: 
-        if service and MAP_STR_TO_API[service.lower()] != carto:
+        if service and service.lower() != 'carto':
             raise HTTPException(
                 status_code=400,
                 detail="SQL parameter can only be used with `service=carto`",
                 headers={"title": "Bad Request"},
             )
-        rv = await carto.get(**params)
+        try: 
+            rv = await api_manager.map_str_to_api['carto'].get(**params)
+        except TimeoutError: 
+            raise HTTPException(
+                status_code=408,
+                detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
+                headers={"title": "Request Timeout"},
+            )
         return generate_final_response(rv)
     if not service: 
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
-        for api in MAP_API_TO_PARAMS:
+        for api in api_manager.map_api_to_params:
             if table: 
-                rv = await api.get(**params)
+                try: 
+                    rv = await api.get(**params)
+                except TimeoutError: 
+                    api_manager.deprioritize(api)
+                    error = Error(
+                        code=408,
+                        title=f"{api.name} Timeout Error",
+                        detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again."
+                    )
+                    rv_combined.errors.append(error)
+                else: 
+                    if not rv.errors: 
+                        rv.meta.service_available_query_parameters = api_manager.map_api_to_params[api]
+                        return rv
+                    else:
+                        rv_combined.errors.append(rv.errors[0])
             else: 
                 raise HTTPException(
                     status_code=400,
                     detail="'table' or 'sql' parameters are required",
                     headers={"title": "Bad Request"},
                 )
-            
-            if not rv.errors: 
-                rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
-                return rv
-            else:
-                rv_combined.errors.append(rv.errors[0])
         return generate_final_response(rv_combined)
     else: 
-        api = MAP_STR_TO_API[service.lower()]
+        api = api_manager.map_str_to_api[service.lower()]
         if table: 
-            if count_only: 
-                rv = await api.get_count(**params)
-            else: 
-                rv = await api.get(**params) 
+            try: 
+                if count_only: 
+                    rv = await api.get_count(**params)
+                else: 
+                    rv = await api.get(**params) 
+            except TimeoutError: 
+                raise HTTPException(
+                    status_code=408,
+                    detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again",
+                    headers={"title": "Request Timeout"},
+                )
         else:
             raise HTTPException(
                 status_code=400,
                 detail="'table' or 'sql' parameters are required",
                 headers={"title": "Bad Request"},
             )
-        rv.meta.service_available_query_parameters = MAP_API_TO_PARAMS[api]
+        rv.meta.service_available_query_parameters = api_manager.map_api_to_params[api]
         return generate_final_response(rv)
 
 
+@app.get("/api_priority", tags=["Routes"])
+async def get_api_priority() -> list:
+    """Return the API names in the order they will be searched if no `service` 
+    is specified. If an API returns a TimeoutError during a request, then it will be 
+    placed last in priority order."""
+    return [api.name for api in api_manager.api_priority_queue]
+
+
 @app.get("/", tags=["Routes"])
-async def root() -> RedirectResponse:
+async def docs() -> RedirectResponse:
     """Redirect to the `/docs` endpoint"""
     return RedirectResponse(url="/docs")
 
@@ -269,7 +268,7 @@ async def update_cache(request: Request):
     update its cache
     """    
     try: 
-        tokens_match = secrets.compare_digest(request.headers['token'], API_TOKEN)
+        tokens_match = secrets.compare_digest(request.headers['token'], api_token)
     except KeyError: 
         tokens_match = False
     if tokens_match: 

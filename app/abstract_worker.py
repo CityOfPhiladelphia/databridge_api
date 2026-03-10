@@ -1,11 +1,8 @@
 from __future__ import annotations
-import os
-import json
 from .models import ReturnJson, GeoJsonFeature
 from abc import ABC, abstractmethod
 from fastapi import Request
 import inspect
-import subprocess
 import datetime as dt
 from collections.abc import Callable
 
@@ -95,72 +92,3 @@ class AbstractWorker(ABC):
             new_where = next_where
         next_url = str(old_url.include_query_params(where=new_where))
         return next_url
-
-
-class GeomCache(): 
-    """An in-memory cache for the API to quickly determine the name of a table's 
-    geometry column so that the correct API calls can be made to the downstream 
-    APIs. This is particularly for Carto which uses raw SQL queries to determine the 
-    data to return.
-    """
-    def __init__(self): 
-        self.script = "./clone_databridge_schemas.sh"
-        self.folder = "./databridge-schemas"
-        self.cache: dict[str, str|None] = {}
-
-    def update(self):
-        """Call the functions necessary to update the geometry cache. Note these 
-        functions block the API from responding to network requests.
-        """        
-        self.update_local_repo()
-        self.search_recursively(self.folder)
-        print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
-
-    def update_local_repo(self): 
-        """Update the local copy of the databridge-schemas repository. Note that 
-        this runs a bash script in a subprocess which blocks the API from responding
-        until the subprocess completes
-        """        
-        p = subprocess.run(
-            self.script, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15
-        )
-        try: 
-            p.check_returncode()
-        except subprocess.CalledProcessError: 
-            print('GeomCache update subprocess error output:\n')
-            print(p.stdout.decode())
-            raise
-
-    def search_recursively(self, path: str): 
-        """Recursively search the local copy of the databridge-schemas repository
-        for .json files representing table schemas. This function searches for files
-        recursively by calling _itself_ recursively.
-
-        Args:
-            path (str): Filepath for table's schema
-        """        
-        for file in os.listdir(path): 
-            new_path = os.path.join(path, file)
-            if os.path.isfile(new_path) and new_path.endswith('.json'): 
-                self.update_cache_table(new_path)
-            elif os.path.isdir(new_path): 
-                self.search_recursively(new_path)
-
-    def update_cache_table(self, path: str): 
-        """Update a table's geometry column in the cache using the table's schema
-
-        Args:
-            path (str): Filepath for table's schema
-        
-        Raises: 
-            AssertionError if multiple geometry columns are found in a table's schema
-        """        
-        table = os.path.splitext(os.path.basename(path))[0]
-        with open(path) as f: 
-            table_schema = json.load(f)
-        geom_column = None
-        for field in table_schema['fields']: 
-            if field['type'] == 'geometry': 
-                assert geom_column is None, f"Table schema '{table}' contains multiple geometry columns: '{geom_column}' and '{field['name']}'"
-                geom_column = field['name']
-        self.cache[table] = {'geom_column': geom_column}

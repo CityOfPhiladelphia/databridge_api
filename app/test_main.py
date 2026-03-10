@@ -1,14 +1,14 @@
 from fastapi.testclient import TestClient
 import pytest
 import citygeo_secrets as cgs
-from .main import app, MAP_STR_TO_API
+from .main import api_manager, app
 from .utils_tests import generate_ago_token, AGO_SECRET
 from collections.abc import Generator
 
 # Response validation handled by pydantic on API server itself
 # Still have to coerce FastAPI default validation errors to JSON:API spec
 GOOD_TABLES = [
-    'dor_parcel',                       # Public, geometric, AGO & Carto
+    'rtt_summary',                      # Public, geometric, AGO & Carto. Large enough to crash this API.
     'ppd_complaints'                    # Public, non-geometric, AGO & Carto, 
 ]
 PRIVATE_TABLE = 'city_locations_point'  # Private, geometric, AGO only
@@ -41,7 +41,7 @@ def token() -> str:
 ################################################################################
 
 @pytest.mark.parametrize('table', GOOD_TABLES)
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid(client: TestClient, service: str, table: str):
     '''Test that each service works'''
     params = {'table': table, 'service': service}
@@ -75,13 +75,13 @@ def test_valid_private_no_intefere(client: TestClient, token: str):
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_fields(client: TestClient, service: str):
     '''Test that the `fields` parameter returns only those fields'''
     params = {
         "table": GOOD_TABLES[0],
         "limit": 2,
-        "fields": "objectid,addr_std",
+        "fields": "objectid,document_id,document_type,display_date",
         "service": service,
     }
     response = client.get('/get', params=params)
@@ -97,7 +97,7 @@ field and this API doesn't include it, then AGO will not provide feature IDs.
 I'm making the design decision to include an extra field in the user response 
 rather than not providing the "id" column. Either way, AGO (and thus this API) 
 violates the JSON:API spec.''')
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_fields2(client: TestClient, service: str):
     params = {
         "table": GOOD_TABLES[0],
@@ -113,7 +113,7 @@ def test_valid_fields2(client: TestClient, service: str):
         assert set(feature['properties'].keys()) == set(params['fields'].split(','))
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_where(client: TestClient, service: str):
     '''Test that the `where` parameter works'''
     params = {
@@ -128,7 +128,7 @@ def test_valid_where(client: TestClient, service: str):
     assert len(rv['data']['features']) == 2
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_where_parethesization(client: TestClient, service: str):
     '''Test that the `where` clause given by the next url and joined with an SQL 
     AND doesn't decouple any existing WHERE clause, i.e. because SQL `AND` binds 
@@ -152,7 +152,7 @@ def test_valid_where_parethesization(client: TestClient, service: str):
 
 
 @pytest.mark.parametrize("table", [GOOD_TABLES[0]])
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_limit_next(client: TestClient, service: str, table: str):
     '''Test that the `limit` parameter works and that the `next` url works'''
     LIMIT = 2
@@ -178,7 +178,7 @@ def test_valid_limit_next(client: TestClient, service: str, table: str):
         assert id2 > max_id
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_count_only(client: TestClient, service: str):
     '''Test that the `count_only` parameter works'''
     params = {
@@ -195,7 +195,7 @@ def test_valid_count_only(client: TestClient, service: str):
     assert rv["meta"]["records_total"] == 5
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_valid_srid(client: TestClient, service: str):
     '''Test that the `srid` parameter works'''
     params = {
@@ -243,6 +243,11 @@ def test_valid_no_service(client: TestClient, table: str):
 # Invalid Parameter Tests # 
 ################################################################################
 
+# Note that the invalid parameter tests generally want a response code >= 400 and 
+# < 500 because any problem in the python code itself would return a 500 error code.
+# The API should be well-enough designed that the user never receives "Internal Server Error" as 
+# that would leave them clueless as to what went wrong.
+
 def test_invalid_nothing(client):
     '''Test that the API fails if no `sql` or `table` parameters passed''' 
     response = client.get('/get')
@@ -260,7 +265,7 @@ def test_invalid_nothing2(client):
     assert 'errors' in data
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_invalid_table(client: TestClient, service: str):
     '''Test that the API fails if an invalid `table` parameter is passed''' 
     params = {'table': 'bad_table', 'service': service}
@@ -270,7 +275,7 @@ def test_invalid_table(client: TestClient, service: str):
     assert 'errors' in data
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_invalid_fields(client: TestClient, service: str):
     '''Test that the API fails if an invalid `fields` parameter is passed''' 
     # Note that AGO will run with it if the field is "1234" or "'text' AS example"
@@ -285,7 +290,7 @@ def test_invalid_fields(client: TestClient, service: str):
     assert "errors" in data
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_invalid_where(client: TestClient, service: str):
     """Test that the API fails if an invalid `where` parameter is passed"""
     params = {
@@ -300,7 +305,7 @@ def test_invalid_where(client: TestClient, service: str):
 
 
 @pytest.mark.parametrize('limit', ["-1", "abc"])
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_invalid_limit(client: TestClient, service: str, limit: str):
     """Test that the API fails if an invalid `limit` parameter is passed"""
     params = {
@@ -314,7 +319,7 @@ def test_invalid_limit(client: TestClient, service: str, limit: str):
     assert "errors" in data
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_invalid_count_only(client: TestClient, service: str, ):
     """Test that the API fails if an invalid `count_only` table is passed"""
     params = {
@@ -328,7 +333,7 @@ def test_invalid_count_only(client: TestClient, service: str, ):
     assert "errors" in data
 
 
-@pytest.mark.parametrize('service', MAP_STR_TO_API.keys())
+@pytest.mark.parametrize('service', api_manager.map_str_to_api.keys())
 def test_invalid_sql(client: TestClient, service: str):
     """Test that the API fails if invalid `sql` parameter is passed"""
     params = {
@@ -347,7 +352,7 @@ def test_invalid_sql_large_payload(client):
         'sql': f'SELECT * FROM {GOOD_TABLES[0]}', 
     }
     response = client.get('/get', params=params)
-    assert response.status_code == 413
+    assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
 

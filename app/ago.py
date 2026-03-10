@@ -1,6 +1,6 @@
 import aiohttp
 from fastapi import Request
-from .abstract_worker import AbstractWorker
+from .utils import AbstractWorker
 from .models import ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
 
 class Ago(AbstractWorker):
@@ -14,6 +14,7 @@ class Ago(AbstractWorker):
         self,
         table: str | None,
         where: str | None,
+        timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs
@@ -28,7 +29,7 @@ class Ago(AbstractWorker):
         }
         if kwargs['token']: 
             params['token'] = kwargs["token"].removeprefix("Bearer ")
-        async with session.get(url, params=params) as response:
+        async with session.get(url, params=params, timeout=timeout) as response:
             return await self.normalize_rv_count(request, response)
 
     async def normalize_rv_count(
@@ -73,7 +74,8 @@ class Ago(AbstractWorker):
         where: str | None,
         limit: int | None,
         count_only: bool | None,
-        out_sr: int | None, 
+        out_sr: int | None,
+        timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -96,7 +98,7 @@ class Ago(AbstractWorker):
             params["resultRecordCount"] = limit
         if kwargs['token']: 
             params['token'] = kwargs["token"].removeprefix("Bearer ")
-        async with session.get(url, params=params) as response:
+        async with session.get(url, params=params, timeout=timeout) as response:
             return await self.normalize_rv(request, response)
 
     async def normalize_rv(

@@ -1,7 +1,7 @@
 import aiohttp
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
-from .abstract_worker import AbstractWorker
+from .utils import AbstractWorker
 from .models import (
     ReturnJson,
     Meta,
@@ -39,6 +39,7 @@ class Carto(AbstractWorker):
         self,
         table: str | None,
         where: str | None,
+        timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -53,7 +54,7 @@ class Carto(AbstractWorker):
             query = query + q_where
         params = {'q': query.as_string()}
         async with session.get(
-            self.base_url, params=params, headers=self.auth_header
+            self.base_url, params=params, headers=self.auth_header, timeout=timeout
         ) as response:
             return await self.normalize_rv_count(request, response)
 
@@ -86,6 +87,7 @@ class Carto(AbstractWorker):
         count_only: bool,
         out_sr: int | None,
         sql: str | None,
+        timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -141,7 +143,7 @@ class Carto(AbstractWorker):
             query = psql.SQL(sql)
         params = {'q': query.as_string()}
         async with session.get(
-            self.base_url, params=params, headers=self.auth_header
+            self.base_url, params=params, headers=self.auth_header, timeout=timeout
         ) as response:
             return await self.normalize_rv(request, response, limit, sql)
 
@@ -155,7 +157,7 @@ class Carto(AbstractWorker):
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
         if int(response.headers['Content-Length']) >= self.MAX_RESPONSE_SIZE: 
-            error = Error(code="413", title="Content Too Large", detail='Request less data; preferably 2,000 rows or fewer.')
+            error = Error(code="413", title="Content Too Large", detail='Request less data, preferably 2,000 rows or fewer.')
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
         data = await response.json()
