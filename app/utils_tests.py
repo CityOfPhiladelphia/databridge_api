@@ -1,30 +1,27 @@
 import requests
-
+import os
 
 TIMEOUT = 15
-AGO_SECRET = "AGO/maps.phl.data"
 
-
-def generate_ago_token(creds: dict) -> dict:
+def generate_ago_token() -> dict:
     """Generate an access token in exchange for user credentials that can be 
     used by clients when working with the ArcGIS Portal API:
     https://developers.arcgis.com/rest/users-groups-and-items/generate-token/
-    
-    Args:
-        creds (dict): Login credentials
 
     Returns:
-        str: Token
+        dict: Token response
     """    
     # Assume first item passed to us is the user specific creds
-    first = next(iter(creds))
-    login_creds = creds[first]
-    user = login_creds['login']
-    password = login_creds['password']
-    url = login_creds['url'] + "/sharing/rest/generateToken"
+
+    if not all([os.environ.get('AGO_USER'), os.environ.get('AGO_PASSWORD'), os.environ.get('AGO_URL')]):
+        raise ValueError("Missing AGO credentials. Please set AGO_USER, AGO_PASSWORD, and AGO_URL in your environment variables and source them!")
+
+    user = os.environ.get('AGO_USER')
+    password = os.environ.get('AGO_PASSWORD')
+    url = os.environ.get('AGO_URL') + "/sharing/rest/generateToken"
     data = {'username': user,
             'password': password,
-            'referer': login_creds['url'],
+            'referer': os.environ.get('AGO_URL'),
             'f': 'json'}
     print('Requesting AGO token')
     response = requests.post(url, data, timeout=TIMEOUT)

@@ -1,18 +1,15 @@
 [project]
 name = "oit-api-wrapper"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "aiohttp[speedups]>=3.13.3",
-    "citygeo-secrets",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.128.0",
     "httpx>=0.28.1",
-    "psycopg>=3.3.2",
+    "psycopg[binary]>=3.3.2",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
+    "requests>=2.32.5",
 ]
-
-[tool.uv.sources]
-citygeo-secrets = { git = "ssh://git@github.com/CityOfPhiladelphia/citygeo_secrets.git" }

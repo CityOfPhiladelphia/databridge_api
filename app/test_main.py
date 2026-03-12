@@ -1,8 +1,7 @@
 from fastapi.testclient import TestClient
 import pytest
-import citygeo_secrets as cgs
 from .main import api_manager, app
-from .utils_tests import generate_ago_token, AGO_SECRET
+from .utils_tests import generate_ago_token
 from collections.abc import Generator
 
 # Response validation handled by pydantic on API server itself
@@ -32,7 +31,7 @@ def token() -> str:
     Returns:
         str: AGO private token
     """    
-    response_json = cgs.connect_with_secrets(generate_ago_token, AGO_SECRET)
+    response_json = generate_ago_token()
     token = response_json['token']
     return token
 

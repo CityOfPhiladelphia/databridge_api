@@ -16,7 +16,6 @@ from .utils import (
     description,
     generate_final_response,
     make_param_api_descriptions,
-    api_token,
 )
 
 
@@ -259,24 +258,3 @@ async def get_api_priority() -> list:
 async def docs() -> RedirectResponse:
     """Redirect to the `/docs` endpoint"""
     return RedirectResponse(url="/docs")
-
-
-@app.post('/update_cache', include_in_schema=False)
-async def update_cache(request: Request): 
-    """A private endpoint intended for use only by GitHub Actions to alert this 
-    API that the `databridge-schemas` repo has been updated so that this API can 
-    update its cache
-    """    
-    try: 
-        tokens_match = secrets.compare_digest(request.headers['token'], api_token)
-    except KeyError: 
-        tokens_match = False
-    if tokens_match: 
-        geom_cache.update()
-        return f"Cache successfully updated. {len(geom_cache.cache):,} tables in cache."
-    else: 
-        raise HTTPException(
-            status_code=403,
-            detail="Pass valid token in request header using format 'token: <token>'",
-            headers={"title": "Invalid token"},
-        )
