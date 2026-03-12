@@ -30,7 +30,7 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
-    # Copy private databridge-schemas repo for use in the container (just so pytests work, in prod it will get the gh repo from a sidecar)
+    # Copy private databridge-schemas repo for use in the container (just so pytests work, in prod it will get the gh repo from an eks pod sidecar)
     - name: Checkout Databridge Schemas
       uses: actions/checkout@v4
       with:
@@ -46,7 +46,14 @@ jobs:
       run: docker build -t oit_api_wrapper:latest --no-cache .
         
     - name: pytests
-      run: docker run --rm  oit_api_wrapper:latest pytest -vvv -ra --showlocals --tb=long --disable-warnings
+      run: >
+        docker run --rm 
+        -e CARTO_TOKEN 
+        -e AGO_USER 
+        -e AGO_PASSWORD 
+        -e AGO_URL 
+        oit_api_wrapper:latest 
+        pytest -vvv -ra --showlocals --tb=long --disable-warnings
       env:
         CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
         AGO_USER: ${{ secrets.AGO_USER }}

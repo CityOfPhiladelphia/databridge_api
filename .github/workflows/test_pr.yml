@@ -38,7 +38,14 @@ jobs:
       run: docker build -t oit_api_wrapper:latest --no-cache .
         
     - name: pytests
-      run: docker run --rm  oit_api_wrapper:latest pytest -vvv -ra --showlocals --tb=long --disable-warnings
+      run: >
+        docker run --rm 
+        -e CARTO_TOKEN 
+        -e AGO_USER 
+        -e AGO_PASSWORD 
+        -e AGO_URL 
+        oit_api_wrapper:latest 
+        pytest -vvv -ra --showlocals --tb=long --disable-warnings
       env:
         CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
         AGO_USER: ${{ secrets.AGO_USER }}
