@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 COPY . ./
-COPY databridge-schemas/ ./databridge-schemas
+COPY databridge-schemas/ /var/git/databridge-schemas
 
 RUN pip install .
 

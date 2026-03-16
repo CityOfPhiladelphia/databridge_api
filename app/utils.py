@@ -20,8 +20,7 @@ class GeomCache:
     """
 
     def __init__(self):
-        self.script = "./clone_databridge_schemas.sh"
-        self.folder = "./databridge-schemas"
+        self.folder = "/var/git/databridge-schemas"
         self.cache: dict[str, str | None] = {}
         self.update()
 
@@ -29,7 +28,7 @@ class GeomCache:
         """Call the functions necessary to update the geometry cache. Note these
         functions block the API from responding to network requests.
         """
-        assert os.path.isfile(self.script), f"databridge-schemas repo not found at {self.script}!!"
+        assert os.path.isdir(self.folder), f"databridge-schemas repo not found at {self.folder}!!"
         self.search_recursively(self.folder)
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
