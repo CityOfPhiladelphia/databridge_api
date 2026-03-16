@@ -60,11 +60,12 @@ jobs:
         AGO_PASSWORD: ${{ secrets.AGO_PASSWORD }}
         AGO_URL: ${{ secrets.AGO_URL }}
   
-
     # https://github.com/aws-actions/amazon-ecr-login
     - name: Login to Amazon ECR
       id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
+      uses: aws-actions/amazon-ecr-login@v2
+      with:
+        aws-region: us-east-1
 
     - name: Docker Push to ECR
       env:
