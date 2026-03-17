@@ -36,8 +36,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Installing separately from its dependencies allows optimal layer caching
 COPY ./app ./app
 COPY pyproject.toml .
-COPY databridge-schemas/ /var/git/databridge-schemas
 COPY uv.lock .
+COPY databridge-schemas/ /var/git/databridge-schemas
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked
 
