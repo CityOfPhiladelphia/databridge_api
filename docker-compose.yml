@@ -1,0 +1,8 @@
+services:
+  oit_api_wrapper:
+    container_name: oit_api_wrapper
+    build: 
+      context: .
+    env_file: .env
+    ports:
+      - "8000:8000"

@@ -1,4 +1,5 @@
 import aiohttp
+import os
 from fastapi import Request
 from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
 from .utils import AbstractWorker
@@ -11,9 +12,6 @@ from .models import (
     GeoJsonFeature,
 )
 from .utils_carto import FULL_QUERY
-import citygeo_secrets as cgs
-
-cgs.set_config(log_level='warn')
 
 class Carto(AbstractWorker): 
 
@@ -21,19 +19,8 @@ class Carto(AbstractWorker):
         self.name = 'Carto V3 SQL API' 
         self.base_url = "https://gcp-us-east1.api.carto.com/v3/sql/databridge-public-ro/query"
         self.max_records = 1000
-        self.secret_name = 'CARTO - New Platform'
-        self.public_token = self.get_public_token()
+        self.public_token = os.environ.get('CARTO_TOKEN') # token passed in at runtime as env variable.
         self.auth_header = {'Authorization': f'Bearer {self.public_token}'}
-
-    def get_public_token(self) -> str: 
-        """Retrieve the public token necessary for accessing Carto V3 resources
-
-        Returns:
-            str: Token
-        """        
-        secret = cgs.get_secrets(self.secret_name)
-        token = secret[self.secret_name]['Public API Key']
-        return token
     
     async def get_count(
         self,

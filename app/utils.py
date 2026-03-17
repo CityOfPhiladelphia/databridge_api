@@ -5,7 +5,6 @@ import aiohttp
 import os
 import json
 import subprocess
-import citygeo_secrets as cgs
 from .abstract_worker import AbstractWorker
 from .carto import Carto
 from .ago import Ago
@@ -21,8 +20,7 @@ class GeomCache:
     """
 
     def __init__(self):
-        self.script = "./clone_databridge_schemas.sh"
-        self.folder = "./databridge-schemas"
+        self.folder = "/var/git/databridge-schemas"
         self.cache: dict[str, str | None] = {}
         self.update()
 
@@ -30,24 +28,10 @@ class GeomCache:
         """Call the functions necessary to update the geometry cache. Note these
         functions block the API from responding to network requests.
         """
-        self.update_local_repo()
+        assert os.path.isdir(self.folder), f"databridge-schemas repo not found at {self.folder}!!"
         self.search_recursively(self.folder)
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
-    def update_local_repo(self):
-        """Update the local copy of the databridge-schemas repository. Note that
-        this runs a bash script in a subprocess which blocks the API from responding
-        until the subprocess completes
-        """
-        p = subprocess.run(
-            self.script, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15
-        )
-        try:
-            p.check_returncode()
-        except subprocess.CalledProcessError:
-            print("GeomCache update subprocess error output:\n")
-            print(p.stdout.decode())
-            raise
 
     def search_recursively(self, path: str):
         """Recursively search the local copy of the databridge-schemas repository
@@ -194,7 +178,3 @@ def make_param_api_descriptions(api_manager: Api_Manager, param: str) -> str:
         if param in api_manager.map_api_to_params[api]:
             s.append(api.name)
     return "\n\n_Used by:_ " + ", ".join(s)
-
-
-secret = cgs.get_secrets(config.KEEPER_SECRET)
-api_token = secret[config.KEEPER_SECRET]["password"]
