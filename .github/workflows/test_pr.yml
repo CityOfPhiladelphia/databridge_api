@@ -45,7 +45,7 @@ jobs:
         -e AGO_PASSWORD 
         -e AGO_URL 
         oit_api_wrapper-dev:latest 
-        pytest -vvv -ra --showlocals --tb=long --disable-warnings
+        pytest
       env:
         CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
         AGO_USER: ${{ secrets.AGO_USER }}
