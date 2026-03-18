@@ -240,9 +240,9 @@ def test_valid_sql(client):
 
 def test_valid_sql_too_large(client):
     """Test that the `sql` parameter works will error if the response from Carto
-    is too large"""
+    is too large to handle but smaller than a timeout"""
     params = {
-        "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 5000",
+        "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
     }
     response = client.get("/get", params=params)
     assert response.status_code == 413

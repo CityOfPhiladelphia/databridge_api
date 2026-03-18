@@ -14,8 +14,8 @@ class AbstractWorker(ABC):
 
     CACHE_DURATION = dt.timedelta(minutes=15)
     MAX_RESPONSE_SIZE = (
-        2 * 1024 * 1024
-    )  # 2MB response limit to not crash user systems (2MB of data expands to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
+        1 * 1024 * 1024
+    )  # 1MB response limit to not crash user systems (1MB of data is expanding to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
     DEFAULT_SRID = 4326
 
     @abstractmethod
