@@ -3,14 +3,13 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
 from contextlib import asynccontextmanager
 import aiohttp
-from asyncio import TimeoutError
+from asyncio import TimeoutError, create_task
 from typing import Annotated
-import secrets
 from .models import ReturnJson, Links, Error
 from .utils import (
     AbstractWorker,
     Api_Manager,
-    GeomCache,
+    SchemaCache,
     SessionManager,
     Service,
     description,
@@ -20,7 +19,7 @@ from .utils import (
 
 
 session_manager = SessionManager()
-geom_cache = GeomCache()
+schema_cache = SchemaCache()
 api_manager = Api_Manager()
 
 
@@ -32,23 +31,29 @@ async def lifespan(app: FastAPI):
     Args:
         app (FastAPI): App
     """
+    commit_check_task = create_task(schema_cache.loop_commit_check())
     await session_manager.start()
     yield
+    commit_check_task.cancel()
     await session_manager.stop()
 
 
-app = FastAPI(lifespan=lifespan, title="OIT API Data Wrapper", description=description) 
+app = FastAPI(lifespan=lifespan, title="OIT API Data Wrapper", description=description)
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    '''Overwrite default FastAPI Validation Error to return consistent with JSON:API Spec'''
+    """Overwrite default FastAPI Validation Error to return consistent with JSON:API Spec"""
     links = Links(self=str(request.url))
     rv_combined = ReturnJson(links=links, errors=[])
-    for err in exc.errors(): 
-        error = Error(code='422', title=err['type'], detail=f'Message: {err['msg']}. Location: {err['loc']}. Input: \'{err['input']}\'')
+    for err in exc.errors():
+        error = Error(
+            code="422",
+            title=err["type"],
+            detail=f"Message: {err['msg']}. Location: {err['loc']}. Input: '{err['input']}'",
+        )
         rv_combined.errors.append(error)
     response = JSONResponse(
         status_code=422,
@@ -59,9 +64,9 @@ async def validation_exception_handler(
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    '''Overwrite default FastAPI HTTP Error to return consistent with JSON:API Spec'''
+    """Overwrite default FastAPI HTTP Error to return consistent with JSON:API Spec"""
     links = Links(self=str(request.url))
-    error = Error(code=exc.status_code, title=exc.headers['title'], detail=exc.detail)
+    error = Error(code=exc.status_code, title=exc.headers["title"], detail=exc.detail)
     rv = ReturnJson(links=links, errors=[error])
     response = JSONResponse(
         status_code=exc.status_code,
@@ -155,82 +160,84 @@ async def get_data(
         ),
     ] = 30,
     session: aiohttp.ClientSession = Depends(session_manager),
-) -> ReturnJson | JSONResponse: 
+) -> ReturnJson | JSONResponse:
     """Use this endpoint to retrieve data from the available
-    services. At a minimum either the `table` or `sql` parameter is required. 
-    \nParameters are case-sensitive and those not relevant to a specific service 
+    services. At a minimum either the `table` or `sql` parameter is required.
+    \nParameters are case-sensitive and those not relevant to a specific service
     will be ignored."""
-    if 'authorization' in request.headers: 
-        token = request.headers['authorization']
-    else: 
+    if "authorization" in request.headers:
+        token = request.headers["authorization"]
+    else:
         token = None
     params = {
-        'table': table,
-        'fields': fields,
-        'where': where,
-        'limit': limit,
-        'out_sr': out_sr, 
-        'count_only': count_only, 
-        'sql': sql,
-        'token': token,
-        'session': session,
-        'timeout': timeout,
-        'request': request, 
-        'geom_cache': geom_cache
+        "table": table,
+        "fields": fields,
+        "where": where,
+        "limit": limit,
+        "out_sr": out_sr,
+        "count_only": count_only,
+        "sql": sql,
+        "token": token,
+        "session": session,
+        "timeout": timeout,
+        "request": request,
+        "schema_cache": schema_cache,
     }
-    if sql: 
-        if service and service.lower() != 'carto':
+    if sql:
+        if service and service.lower() != "carto":
             raise HTTPException(
                 status_code=400,
                 detail="SQL parameter can only be used with `service=carto`",
                 headers={"title": "Bad Request"},
             )
-        try: 
-            rv = await api_manager.map_str_to_api['carto'].get(**params)
-        except TimeoutError: 
+        try:
+            rv = await api_manager.map_str_to_api["carto"].get(**params)
+        except TimeoutError:
             raise HTTPException(
                 status_code=408,
                 detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
                 headers={"title": "Request Timeout"},
             )
         return generate_final_response(rv)
-    if not service: 
+    if not service:
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
         for api in api_manager.map_api_to_params:
-            if table: 
-                try: 
+            if table:
+                try:
                     rv = await api.get(**params)
-                except TimeoutError: 
+                except TimeoutError:
                     api_manager.deprioritize(api)
                     error = Error(
                         code=408,
                         title=f"{api.name} Timeout Error",
-                        detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again."
+                        detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
                     )
                     rv_combined.errors.append(error)
-                else: 
-                    if not rv.errors: 
-                        rv.meta.service_available_query_parameters = api_manager.map_api_to_params[api]
+                else:
+                    if not rv.errors:
+                        rv.meta.service_available_query_parameters = (
+                            api_manager.map_api_to_params[api]
+                        )
                         return rv
                     else:
                         rv_combined.errors.append(rv.errors[0])
-            else: 
+            else:
                 raise HTTPException(
                     status_code=400,
                     detail="'table' or 'sql' parameters are required",
                     headers={"title": "Bad Request"},
                 )
         return generate_final_response(rv_combined)
-    else: 
+    else:
         api = api_manager.map_str_to_api[service.lower()]
-        if table: 
-            try: 
-                if count_only: 
+        if table:
+            try:
+                if count_only:
                     rv = await api.get_count(**params)
-                else: 
-                    rv = await api.get(**params) 
-            except TimeoutError: 
+                else:
+                    rv = await api.get(**params)
+            except TimeoutError:
                 raise HTTPException(
                     status_code=408,
                     detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again",
@@ -248,8 +255,8 @@ async def get_data(
 
 @app.get("/api_priority", tags=["Routes"])
 async def get_api_priority() -> list:
-    """Return the API names in the order they will be searched if no `service` 
-    is specified. If an API returns a TimeoutError during a request, then it will be 
+    """Return the API names in the order they will be searched if no `service`
+    is specified. If an API returns a TimeoutError during a request, then it will be
     placed last in priority order."""
     return [api.name for api in api_manager.api_priority_queue]
 

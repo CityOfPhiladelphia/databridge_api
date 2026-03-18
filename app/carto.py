@@ -1,8 +1,9 @@
 import aiohttp
 import os
 from fastapi import Request
-from psycopg import sql as psql # Redefine to allow "sql" as a query parameter
-from .utils import AbstractWorker
+from fastapi.exceptions import HTTPException
+from psycopg import sql as psql  # Redefine to allow "sql" as a query parameter
+from .abstract import AbstractWorker, check_fields_valid
 from .models import (
     ReturnJson,
     Meta,
@@ -13,15 +14,19 @@ from .models import (
 )
 from .utils_carto import FULL_QUERY
 
-class Carto(AbstractWorker): 
 
-    def __init__(self): 
-        self.name = 'Carto V3 SQL API' 
-        self.base_url = "https://gcp-us-east1.api.carto.com/v3/sql/databridge-public-ro/query"
+class Carto(AbstractWorker):
+    def __init__(self):
+        self.name = "Carto V3 SQL API"
+        self.base_url = (
+            "https://gcp-us-east1.api.carto.com/v3/sql/databridge-public-ro/query"
+        )
         self.max_records = 1000
-        self.public_token = os.environ.get('CARTO_TOKEN') # token passed in at runtime as env variable.
-        self.auth_header = {'Authorization': f'Bearer {self.public_token}'}
-    
+        self.public_token = os.environ.get(
+            "CARTO_TOKEN"
+        )  # token passed in at runtime as env variable.
+        self.auth_header = {"Authorization": f"Bearer {self.public_token}"}
+
     async def get_count(
         self,
         table: str | None,
@@ -31,15 +36,15 @@ class Carto(AbstractWorker):
         request: Request,
         **kwargs,
     ) -> ReturnJson:
-        # These queries on their own are unsafe, but we are relying on the safety 
+        # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
-        q_select = psql.SQL('SELECT COUNT(*)')
-        q_from = psql.SQL(' FROM {table} ').format(table=psql.Identifier(table))
+        q_select = psql.SQL("SELECT COUNT(*)")
+        q_from = psql.SQL(" FROM {table} ").format(table=psql.Identifier(table))
         query = q_select + q_from
-        if where: 
-            q_where = psql.SQL(f'WHERE {where} ')
+        if where:
+            q_where = psql.SQL(f"WHERE {where} ")
             query = query + q_where
-        params = {'q': query.as_string()}
+        params = {"q": query.as_string()}
         async with session.get(
             self.base_url, params=params, headers=self.auth_header, timeout=timeout
         ) as response:
@@ -79,23 +84,15 @@ class Carto(AbstractWorker):
         request: Request,
         **kwargs,
     ) -> ReturnJson:
-        # These queries on their own are unsafe, but we are relying on the safety 
+        # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
-        if not sql: 
-            # Must happen first as we don't know if Carto table is geometric, which 
-            # affects geojson SQL query structure
+        if not sql:
+            schema_cache = kwargs["schema_cache"]
+            table_schema = schema_cache.retrieve_table_schema(table)
+            geom_column = table_schema["_api_internal_geom_column"]
+            valid_fields = table_schema["_api_internal_valid_fields"]
+
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
-            try: 
-                geom_column = kwargs['geom_cache'].cache[table]['geom_column']
-            except KeyError:
-                links = Links(self=str(request.url))
-                error = Error(
-                    code=404,
-                    title="Not Found",
-                    detail=f"Schema not found for table '{table}'",
-                )
-                meta = Meta(service=self.name)
-                return ReturnJson(errors=[error], links=links, meta=meta)
             if geom_column:
                 subq_select += psql.SQL(
                     "ST_Transform({geom_column}, {out_sr}) AS geojson_shape, "
@@ -103,32 +100,37 @@ class Carto(AbstractWorker):
                     geom_column=psql.Identifier(geom_column),
                     out_sr=psql.Literal(out_sr),
                 )
-            else: 
+            else:
                 subq_select += psql.SQL("NULL AS geojson_shape, ")
-            if fields: 
+            if fields:
                 field_list = [field.strip() for field in fields.split(",")]
-                fields_composed = psql.SQL(', ').join([psql.Identifier(field) for field in field_list])
-                fields_composed += psql.SQL(' ')
-                subq_select += fields_composed 
-            else: 
-                subq_select += psql.SQL("* ")
+                check_fields_valid(field_list, valid_fields, table)
+                fields_composed = psql.SQL(", ").join(
+                    [psql.Identifier(field) for field in field_list]
+                )
+                fields_composed += psql.SQL(" ")
+                subq_select += fields_composed
+            else:
+                subq_select += psql.SQL(", ").join(
+                    [psql.Identifier(field) for field in valid_fields]
+                )
 
-            subq_from = psql.SQL('FROM {table} ').format(table=psql.Identifier(table))
+            subq_from = psql.SQL("FROM {table} ").format(table=psql.Identifier(table))
             subq = subq_select + subq_from
-            if where: 
-                subq_where = psql.SQL(f'WHERE {where} ')
+            if where:
+                subq_where = psql.SQL(f"WHERE {where} ")
                 subq = subq + subq_where
-            subq += psql.SQL('ORDER BY objectid ')
-            if limit is None: 
+            subq += psql.SQL("ORDER BY objectid ")
+            if limit is None:
                 limit = self.max_records
-            else: 
+            else:
                 limit = min(limit, self.max_records)
-            subq_limit = psql.SQL('LIMIT {limit} ').format(limit=psql.Literal(limit))
+            subq_limit = psql.SQL("LIMIT {limit} ").format(limit=psql.Literal(limit))
             subq = subq + subq_limit
             query = psql.SQL(FULL_QUERY).format(subq=subq)
-        else: 
+        else:
             query = psql.SQL(sql)
-        params = {'q': query.as_string()}
+        params = {"q": query.as_string()}
         async with session.get(
             self.base_url, params=params, headers=self.auth_header, timeout=timeout
         ) as response:
@@ -143,18 +145,22 @@ class Carto(AbstractWorker):
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
-        if int(response.headers['Content-Length']) >= self.MAX_RESPONSE_SIZE: 
-            error = Error(code="413", title="Content Too Large", detail='Request less data, preferably 2,000 rows or fewer.')
+        if int(response.headers["Content-Length"]) >= self.MAX_RESPONSE_SIZE:
+            error = Error(
+                code="413",
+                title="Content Too Large",
+                detail="Request less data, preferably 2,000 rows or fewer.",
+            )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
         data = await response.json()
-        if response.ok: 
-            try: 
+        if response.ok:
+            try:
                 records = data["rows"][0]["jsonb_build_object"]
                 gjfc = GeoJsonFeatureCollection(**records)
-            except KeyError: # When user passed SQL
+            except KeyError:  # When user passed SQL
                 geojsons = []
-                for record in data['rows']: 
+                for record in data["rows"]:
                     geojson = GeoJsonFeature(properties=record)
                     geojsons.append(geojson)
                 gjfc = GeoJsonFeatureCollection(features=geojsons)
@@ -165,7 +171,7 @@ class Carto(AbstractWorker):
                 links.next = next_url
             rv = ReturnJson(data=gjfc, links=links, meta=meta)
             return rv
-        else: 
+        else:
             error = Error(
                 code=response.status,
                 title=f"{self.name} Error",

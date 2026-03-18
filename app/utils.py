@@ -1,39 +1,73 @@
 from __future__ import annotations
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException
 from enum import Enum
+from asyncio import sleep
 import aiohttp
 import os
 import json
-import subprocess
-from .abstract_worker import AbstractWorker
+import re
+from .abstract import AbstractWorker
 from .carto import Carto
 from .ago import Ago
 from .models import ReturnJson
-from . import config
 
 
-class GeomCache:
-    """An in-memory cache for the API to quickly determine the name of a table's
-    geometry column so that the correct API calls can be made to the downstream
-    APIs. This is particularly for Carto which uses raw SQL queries to determine the
-    data to return.
+class SchemaCache:
+    """An in-memory cache for the API to know a table's fields in order to determine 
+    both the fields to request and which field is the geometry column so that the 
+    correct API calls can be made to the downstream APIs. The latter point is particularly 
+    for Carto which uses raw SQL queries to determine the data to return.
     """
 
     def __init__(self):
         self.folder = "/var/git/databridge-schemas"
+        self.commit_check_delay = 300
+        self.latest_commit: str = None
         self.cache: dict[str, str | None] = {}
-        self.update()
+        self.invalid_fields: list[str] = [
+            'shape',                # Carto
+            'Shape__Area',          # AGO (some tables, such as dor_parcel)
+            'Shape__Length',        # AGO (some tables, such as dor_parcel)
+            'gdb_geomattr_data'     # AGO (some tables, such as dor_parcel)
+        ]
 
+    async def loop_commit_check(self): 
+        """Run a continuous asynchronous loop to quickly absorb any updates to the 
+        schemas repository
+        """        
+        while True: 
+            self.check_latest_commit()
+            await sleep(self.commit_check_delay)
+    
+    def check_latest_commit(self): 
+        """Check if the API has the latest commit of the schemas repository
+        """        
+        print('Checking latest commit')
+        path = os.path.join(self.folder, '.git')
+        if os.path.isdir(path): # Local development 
+            with open(os.path.join(path, 'refs', 'heads', 'main')) as f: 
+                commit = f.readline().strip()
+        elif os.path.isfile(path): # Prod environment 
+            with open(path) as f: 
+                line = f.readline().strip()
+                commit = re.match(r"\w+$", line)[0]
+        if commit != self.latest_commit: 
+            self.update()
+            self.latest_commit = commit
+    
     def update(self):
         """Call the functions necessary to update the geometry cache. Note these
         functions block the API from responding to network requests.
         """
+        print('Updating SchemaCache')
         assert os.path.isdir(self.folder), f"databridge-schemas repo not found at {self.folder}!!"
-        self.search_recursively(self.folder)
+        replacement_cache = self.search_recursively(self.folder)
+        self.cache = replacement_cache
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
 
-    def search_recursively(self, path: str):
+    def search_recursively(self, path: str, replacement_cache = {}):
         """Recursively search the local copy of the databridge-schemas repository
         for .json files representing table schemas. This function searches for files
         recursively by calling _itself_ recursively.
@@ -44,30 +78,57 @@ class GeomCache:
         for file in os.listdir(path):
             new_path = os.path.join(path, file)
             if os.path.isfile(new_path) and new_path.endswith(".json"):
-                self.update_cache_table(new_path)
+                table, table_schema = self.return_table_schema(new_path)
+                assert table not in replacement_cache, f'Two separate tables have the same name: {table}'
+                replacement_cache[table] = table_schema
             elif os.path.isdir(new_path):
-                self.search_recursively(new_path)
+                if not file.startswith('.'): # Ignore .venv, .git, etc.
+                    replacement_cache = self.search_recursively(new_path, replacement_cache)
+        return replacement_cache
 
-    def update_cache_table(self, path: str):
-        """Update a table's geometry column in the cache using the table's schema
+    def return_table_schema(self, path: str) -> tuple[str, dict]:
+        """Return the schema for a table 
 
         Args:
             path (str): Filepath for table's schema
-
-        Raises:
-            AssertionError if multiple geometry columns are found in a table's schema
         """
         table = os.path.splitext(os.path.basename(path))[0]
         with open(path) as f:
-            table_schema = json.load(f)
-        geom_column = None
-        for field in table_schema["fields"]:
-            if field["type"] == "geometry":
-                assert geom_column is None, (
-                    f"Table schema '{table}' contains multiple geometry columns: '{geom_column}' and '{field['name']}'"
-                )
-                geom_column = field["name"]
-        self.cache[table] = {"geom_column": geom_column}
+            schema = json.load(f)
+            self.parse_schema(table, schema)
+        return table, schema
+    
+    def parse_schema(self, table: str, schema: dict) -> str|None: 
+        """Update the schema with its geometry column and valid fields
+
+        Args:
+            table (str): Table name
+            schema_fields (list[dict]): List of schema fields
+
+        Returns:
+            str|None: Name of geometry column, or None if it does not exist
+        
+        Raises: 
+            AssertionError: If multiple geometry columns exist
+        """        
+        schema['_api_internal_geom_column'] = None
+        schema['_api_internal_valid_fields'] = []
+        for field in schema['fields']: 
+            if field['type'] == 'geometry': 
+                assert schema['_api_internal_geom_column'] is None, f'Table "{table}" has multiple geometry columns: {[schema['_api_internal_geom_column'], field['name']]}'
+                schema['_api_internal_geom_column'] = field['name']
+            if field['name'] not in self.invalid_fields: 
+                schema["_api_internal_valid_fields"].append(field["name"])
+
+    def retrieve_table_schema(self, table: str): 
+        try:    
+            return self.cache[table]
+        except KeyError:
+            raise HTTPException(
+                status_code=404,
+                headers={"title": "Not Found"},
+                detail=f"Schema not found for table '{table}'",
+            )
 
 
 description = """
