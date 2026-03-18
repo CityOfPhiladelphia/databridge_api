@@ -25,6 +25,7 @@ class Carto(AbstractWorker):
         self.public_token = os.environ.get(
             "CARTO_TOKEN"
         )  # token passed in at runtime as env variable.
+        assert self.public_token, "Carto token not provided"
         self.auth_header = {"Authorization": f"Bearer {self.public_token}"}
 
     async def get_count(
