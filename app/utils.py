@@ -10,8 +10,7 @@ import re
 from .abstract import AbstractWorker
 from .carto import Carto
 from .ago import Ago
-from .models import ReturnJson
-
+from .models import ReturnJson, TableSchema
 
 class SchemaCache:
     """An in-memory cache for the API to know a table's fields in order to determine 
@@ -19,12 +18,11 @@ class SchemaCache:
     correct API calls can be made to the downstream APIs. The latter point is particularly 
     for Carto which uses raw SQL queries to determine the data to return.
     """
-
     def __init__(self):
         self.folder = "/var/git/databridge-schemas"
         self.commit_check_delay = 300
         self.latest_commit: str = None
-        self.cache: dict[str, str | None] = {}
+        self.cache: dict[str, TableSchema] = {}
         self.invalid_fields: list[str] = [
             'shape',                # Carto
             'Shape__Area',          # AGO (some tables, such as dor_parcel)
@@ -66,7 +64,6 @@ class SchemaCache:
         self.cache = replacement_cache
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
-
     def search_recursively(self, path: str, replacement_cache = {}):
         """Recursively search the local copy of the databridge-schemas repository
         for .json files representing table schemas. This function searches for files
@@ -86,7 +83,7 @@ class SchemaCache:
                     replacement_cache = self.search_recursively(new_path, replacement_cache)
         return replacement_cache
 
-    def return_table_schema(self, path: str) -> tuple[str, dict]:
+    def return_table_schema(self, path: str) -> tuple[str, TableSchema]:
         """Return the schema for a table 
 
         Args:
@@ -95,32 +92,45 @@ class SchemaCache:
         table = os.path.splitext(os.path.basename(path))[0]
         with open(path) as f:
             schema = json.load(f)
-            self.parse_schema(table, schema)
-        return table, schema
+            table_schema = self.parse_schema(table, schema)
+        return table, table_schema
     
-    def parse_schema(self, table: str, schema: dict) -> str|None: 
-        """Update the schema with its geometry column and valid fields
+    def parse_schema(self, table: str, schema: dict) -> TableSchema: 
+        """Update the schema with valid fields, geometry column, and timestamp fields
 
         Args:
             table (str): Table name
-            schema_fields (list[dict]): List of schema fields
+            schema (dict): Table schema
 
         Returns:
-            str|None: Name of geometry column, or None if it does not exist
+            TableSchema: Parsed version of table schema
         
         Raises: 
             AssertionError: If multiple geometry columns exist
         """        
-        schema['_api_internal_geom_column'] = None
-        schema['_api_internal_valid_fields'] = []
-        for field in schema['fields']: 
-            if field['type'] == 'geometry': 
-                assert schema['_api_internal_geom_column'] is None, f'Table "{table}" has multiple geometry columns: {[schema['_api_internal_geom_column'], field['name']]}'
-                schema['_api_internal_geom_column'] = field['name']
-            if field['name'] not in self.invalid_fields: 
-                schema["_api_internal_valid_fields"].append(field["name"])
+        table_schema = TableSchema(**schema)
+        for field in table_schema.fields: 
+            if field.name not in self.invalid_fields: 
+                table_schema._api_valid_fields.append(field.name)
+            if field.type == 'geometry': 
+                assert table_schema._api_geom_column is None, f'Table "{table}" has multiple geometry columns: {[table_schema._api_geom_column, field.name]}'
+                table_schema._api_geom_column = field.name
+            elif field.type.startswith('timestamp'): 
+                table_schema._api_timestamp_fields.append(field.name)
+        return table_schema
 
-    def retrieve_table_schema(self, table: str): 
+    def retrieve_table_schema(self, table: str) -> dict: 
+        """Retrieve the schema for a table from the SchemaCache
+
+        Args:
+            table (str): Table name
+
+        Raises:
+            HTTPException: If table schema not found
+
+        Returns:
+            dict: Table schema
+        """        
         try:    
             return self.cache[table]
         except KeyError:

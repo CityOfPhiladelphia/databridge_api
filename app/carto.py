@@ -1,7 +1,7 @@
 import aiohttp
 import os
+import datetime as dt
 from fastapi import Request
-from fastapi.exceptions import HTTPException
 from psycopg import sql as psql  # Redefine to allow "sql" as a query parameter
 from .abstract import AbstractWorker, check_fields_valid
 from .models import (
@@ -11,6 +11,7 @@ from .models import (
     Error,
     GeoJsonFeatureCollection,
     GeoJsonFeature,
+    TableSchema
 )
 from .utils_carto import FULL_QUERY
 
@@ -90,8 +91,8 @@ class Carto(AbstractWorker):
         if not sql:
             schema_cache = kwargs["schema_cache"]
             table_schema = schema_cache.retrieve_table_schema(table)
-            geom_column = table_schema["_api_internal_geom_column"]
-            valid_fields = table_schema["_api_internal_valid_fields"]
+            geom_column = table_schema._api_geom_column
+            valid_fields = table_schema._api_valid_fields
 
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
             if geom_column:
@@ -131,16 +132,18 @@ class Carto(AbstractWorker):
             query = psql.SQL(FULL_QUERY).format(subq=subq)
         else:
             query = psql.SQL(sql)
+            table_schema = None
         params = {"q": query.as_string()}
         async with session.get(
             self.base_url, params=params, headers=self.auth_header, timeout=timeout
         ) as response:
-            return await self.normalize_rv(request, response, limit, sql)
+            return await self.normalize_rv(request, response, table_schema, limit, sql)
 
     async def normalize_rv(
         self,
         request: Request,
         response: aiohttp.ClientResponse,
+        table_schema: TableSchema | None, 
         limit: int,
         sql: str | None,
     ) -> ReturnJson:
@@ -156,10 +159,13 @@ class Carto(AbstractWorker):
             return rv
         data = await response.json()
         if response.ok:
-            try:
-                records = data["rows"][0]["jsonb_build_object"]
-                gjfc = GeoJsonFeatureCollection(**records)
-            except KeyError:  # When user passed SQL
+            if not sql:
+                records = data["rows"][0]["jsonb_build_object"]['features']
+                records = self.harmonize_timestamp_fields(records, table_schema)
+                gjfc = GeoJsonFeatureCollection(
+                    type="FeatureCollection", features=records
+                )
+            else:
                 geojsons = []
                 for record in data["rows"]:
                     geojson = GeoJsonFeature(properties=record)
@@ -180,3 +186,25 @@ class Carto(AbstractWorker):
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
+
+    def harmonize_timestamp_fields(
+        self, records: list[dict], table_schema: TableSchema
+    ) -> list[dict]:
+        """Return a consistent representation of timestamp fields. Carto returns 
+        timestamps in ISO format
+
+        Args:
+            records (list[dict]): Data records
+            table_schema (TableSchema): TableSchema
+
+        Returns:
+            list[dict]: Updated records
+        """
+        for record in records:
+            for field in record["properties"]:
+                if field in table_schema._api_timestamp_fields:
+                    if record["properties"][field]: 
+                        record["properties"][field] = dt.datetime.fromisoformat(
+                            record["properties"][field]
+                        )
+        return records

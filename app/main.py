@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     Args:
         app (FastAPI): App
     """
+    schema_cache.check_latest_commit()
     commit_check_task = create_task(schema_cache.loop_commit_check())
     await session_manager.start()
     yield

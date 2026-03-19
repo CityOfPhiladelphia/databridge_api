@@ -1,8 +1,9 @@
 # ago.py
 import aiohttp
 from fastapi import Request
+import datetime as dt
 from .abstract import AbstractWorker, check_fields_valid
-from .models import ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection
+from .models import ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, TableSchema
 
 
 class Ago(AbstractWorker):
@@ -85,7 +86,7 @@ class Ago(AbstractWorker):
     ) -> ReturnJson:
         schema_cache = kwargs["schema_cache"]
         table_schema = schema_cache.retrieve_table_schema(table)
-        valid_fields = table_schema["_api_internal_valid_fields"]
+        valid_fields = table_schema._api_valid_fields
 
         url = f"{self.organization_url}{table}{self.query_url}"
         if not where:
@@ -108,10 +109,10 @@ class Ago(AbstractWorker):
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(request, response)
+            return await self.normalize_rv(request, response, table_schema)
 
     async def normalize_rv(
-        self, request: Request, response: aiohttp.ClientResponse
+        self, request: Request, response: aiohttp.ClientResponse, table_schema: TableSchema
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         service_url = self.mask_service_url(request, response)
@@ -121,6 +122,7 @@ class Ago(AbstractWorker):
             data = await response.json()
             if "error" not in data:
                 records = data["features"]
+                records = self.harmonize_timestamp_fields(records, table_schema)
                 gjfc = GeoJsonFeatureCollection(features=records)
                 meta.record_count = len(gjfc.features)
                 try:
@@ -152,6 +154,26 @@ class Ago(AbstractWorker):
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
+
+    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema) -> list[dict]: 
+        """Return a consistent representation of timestamp fields. AGO returns 
+        timestamp fields as milliseconds since the epoch
+
+        Args:
+            records (list[dict]): Data records
+            table_schema (TableSchema): TableSchema
+
+        Returns:
+            list[dict]: Updated records
+        """        
+        for record in records:
+            for field in record["properties"]:
+                if field in table_schema._api_timestamp_fields:
+                    if record["properties"][field]: 
+                        record["properties"][field] = dt.datetime.fromtimestamp(
+                            record["properties"][field] / 1000
+                        )
+        return records
 
     def mask_service_url(
         self, request: Request, response: aiohttp.ClientResponse

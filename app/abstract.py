@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .models import ReturnJson, GeoJsonFeature
+from .models import ReturnJson, GeoJsonFeature, TableSchema
 from abc import ABC, abstractmethod
 from fastapi import Request
 from fastapi.exceptions import HTTPException
@@ -38,6 +38,22 @@ class AbstractWorker(ABC):
     async def normalize_rv(self) -> ReturnJson:
         """Normalize the data received from the API into a uniform response.
         Implementation is API-specific"""
+        raise NotImplementedError
+    
+    @abstractmethod
+    def harmonize_timestamp_fields(
+        self, records: list[dict], table_schema: TableSchema
+    ) -> list[dict]:
+        """Return a consistent representation of timestamp fields. Implementation 
+        is API-specific
+
+        Args:
+            records (list[dict]): Data records
+            table_schema (TableSchema): TableSchema
+
+        Returns:
+            list[dict]: Updated records
+        """
         raise NotImplementedError
 
     def determine_function_params(self, func: Callable) -> list[str]:

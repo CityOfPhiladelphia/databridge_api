@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, BeforeValidator
+from pydantic import BaseModel, HttpUrl, BeforeValidator, ConfigDict
 from typing import Annotated
 
 
@@ -50,3 +50,19 @@ class ReturnJson(BaseModel, validate_assignment=True):
     errors: list[Error] = None
     links: Links = None
     meta: Meta = None
+
+
+class TableField(BaseModel):
+    name: str
+    type: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+class TableSchema(BaseModel):
+    fields: list[TableField]
+    _api_valid_fields: list[str] = []
+    _api_geom_column: str | None = None
+    _api_timestamp_fields: list[str] = []
+
+    model_config = ConfigDict(extra="allow")

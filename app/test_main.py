@@ -7,7 +7,7 @@ from collections.abc import Generator
 # Response validation handled by pydantic on API server itself
 # Still have to coerce FastAPI default validation errors to JSON:API spec
 GOOD_TABLES = [
-    "rtt_summary",  # Public, geometric, AGO & Carto. Large enough to crash this API.
+    "dor_parcel",  # Public, geometric, AGO & Carto. Large enough to crash this API.
     "ppd_complaints",  # Public, non-geometric, AGO & Carto,
 ]
 PRIVATE_TABLE = "city_locations_point"  # Private, geometric, AGO only
@@ -274,24 +274,27 @@ def test_same_response(client: TestClient, table: str):
     carto_response = client.get("/get", params=carto_params)
     assert ago_response.status_code == 200 and carto_response.status_code == 200
     ago_json = ago_response.json()
+    ago_properties = ago_json["data"]["features"][0]['properties']
     carto_json = carto_response.json()
-    comparison = compare_dicts(ago_json, carto_json)
-    assert comparison == {}
-
+    carto_properties = carto_json["data"]["features"][0]['properties']
+    base_output = {"d1_only": [], "different": [], "d2_only": []}
+    comparison = {"d1_only": [], "different": [], "d2_only": []}
+    comparison = compare_dicts(ago_properties, carto_properties, comparison)
+    assert comparison == base_output
 
 def compare_dicts(
-    d1, d2, output={"d1_only": [], "different": [], "d2_only": []}, prefix=""
+    d1, d2, output: dict, prefix=""
 ):
     for key in d1:
         if key not in d2.keys():
-            output["d1_only"].append({f"d1.{prefix}{key}:{d1[key]}"})
+            output["d1_only"].append({f"d1.{prefix}{key}": d1[key]})
         elif d1[key] != d2[key]:
             output["different"].append(
-                {f"d1.{prefix}{key}": f"{d1[key]}", f"d2.{prefix}{key}": f"{d2[key]}"}
+                {f"d1.{prefix}{key}": d1[key], f"d2.{prefix}{key}": d2[key]}
             )
     for key in d2:
         if key not in d1.keys():
-            output["d2_only"].append({f"d2.{prefix}{key}:{d1[key]}"})
+            output["d2_only"].append({f"d2.{prefix}{key}": d1[key]})
     return output
 
 
