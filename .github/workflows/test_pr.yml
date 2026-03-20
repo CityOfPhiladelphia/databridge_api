@@ -61,11 +61,11 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: us-east-1
 
-    - name: Docker Push to ECR
+    - name: Docker Push to dev ECR
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         ECR_REPOSITORY_URL: ${{ secrets.ECR_DEV_REPOSITORY_URL }}
       run: |
-        docker tag oit_api_wrapper-dev:latest $ECR_REPOSITORY_URL:latest
-        docker push $ECR_REPOSITORY_URL:latest
+        docker tag oit_api_wrapper-dev:latest $ECR_DEV_REPOSITORY_URL:latest
+        docker push $ECR_DEV_REPOSITORY_URL:latest
