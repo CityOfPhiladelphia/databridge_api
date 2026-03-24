@@ -148,7 +148,12 @@ the below specifications:
 1. [GeoJSON](https://datatracker.ietf.org/doc/html/rfc7946) for returned data, and
 1. [OpenAPI](https://www.openapis.org/) for API documentation
 
-Source code: https://github.com/CityOfPhiladelphia/oit_api_wrapper  
+
+Note there may be small differences in data values for the same table between the 
+AGO and Carto APIs specifically in geometry and timestamp fields due to those APIs 
+internal configurations
+
+**Source code: https://github.com/CityOfPhiladelphia/oit_api_wrapper**
 
 ### Carto SQL API V3
 Carto solely contains public tables, but they 
