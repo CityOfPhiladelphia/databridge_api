@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'main'
+  workflow_dispatch
 
 concurrency:
   group: testing_environment
@@ -54,6 +55,9 @@ jobs:
         -e AGO_URL 
         oit_api_wrapper:latest 
         pytest
+        --maxfail=4 
+        --tb=short
+        -v
       env:
         CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
         AGO_USER: ${{ secrets.AGO_USER }}

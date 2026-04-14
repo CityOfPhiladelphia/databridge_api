@@ -218,23 +218,36 @@ class Service(str, Enum):
 
 
 class Api_Manager:
+    """A class to manage the downstream APIs so they can be accessed in different 
+    ways and they can be rearranged in a "priority queue". 
+    """    
     def __init__(self):
-        """Note method must be updated if any new APIs are added
+        """Note this method must be updated if any new APIs are added
         """        
         self.map_str_to_api: dict[str, AbstractWorker] = {
             "ago": Ago(),
             "carto": Carto(),
-        }  # This is the initial order searched if no API is specified.
+        }  # This is the initial order searched if no API is specified, and is the query param the user must submit
         self.map_api_to_params: dict[AbstractWorker, list[str]] = {}
         self.api_priority_queue: list[AbstractWorker] = []
         self.populate_initial_values()
 
     def populate_initial_values(self):
+        """Populate the initial attributes for accessing information about the APIs
+        """        
         for api in self.map_str_to_api.values():
             self.api_priority_queue.append(api)
             self.map_api_to_params[api] = api.determine_function_params(api.get)
 
     def deprioritize(self, api: AbstractWorker):
+        """Deprioritize an API by changing its position to last in priority queue 
+        order. This is intended to only be called when a user did not specify the 
+        API, and an API returned a TimeoutError, so that functioning APIs are 
+        prioritized first for data retrieval.
+
+        Args:
+            api (AbstractWorker): API class
+        """        
         index = self.api_priority_queue.index(api)
         self.api_priority_queue.pop(index)
         self.api_priority_queue.append(api)

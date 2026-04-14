@@ -25,7 +25,7 @@ class Carto(AbstractWorker):
         self.max_records = 1000
         self.public_token = os.environ.get(
             "CARTO_TOKEN"
-        )  # token passed in at runtime as env variable.
+        )  # token passed in at runtime as env variable. Available at Keeper record "CARTO - New Platform"
         assert self.public_token, "Carto token not provided"
         self.auth_header = {"Authorization": f"Bearer {self.public_token}"}
 
