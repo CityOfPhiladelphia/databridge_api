@@ -53,13 +53,14 @@ def test_valid(client: TestClient, service: str, table: str):
 
 
 @pytest.mark.parametrize("count_only", [True, False])
-def test_valid_private(client: TestClient, token: str, count_only: bool):
+@pytest.mark.parametrize("service", ["ago"]) # Keeping this as a parameter for easier ID'ing which tests use which APIs
+def test_valid_private(client: TestClient, token: str, service: str, count_only: bool):
     """Test that a token passed in can access AGO private data"""
     params = {
         "table": PRIVATE_TABLE,
         "limit": 5,
         "count_only": count_only,
-        "service": "ago",
+        "service": service,
     }
     response = client.get("/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
@@ -72,9 +73,10 @@ def test_valid_private(client: TestClient, token: str, count_only: bool):
     assert "********" in rv["meta"]["service_url"]
 
 
-def test_valid_private_no_intefere(client: TestClient, token: str):
+@pytest.mark.parametrize("service", ["carto"])
+def test_valid_private_no_interfere(client: TestClient, service: str, token: str):
     """Test that a private token doesn't interfere with other APIs"""
-    params = {"table": GOOD_TABLES[0], "limit": 5, "service": "carto"}
+    params = {"table": GOOD_TABLES[0], "limit": 5, "service": service}
     response = client.get(
         "/get", params=params, headers={"Authorization": f"Bearer {token}"}
     )
@@ -223,14 +225,15 @@ def test_valid_srid(client: TestClient, service: str):
     assert data != data2
 
 
-def test_valid_sql(client):
+@pytest.mark.parametrize("service", ["carto"])
+def test_valid_sql(client: TestClient, service: str):
     """Test that the `sql` parameter works, only on Carto"""
     params = {
         "table": "ANSTHES",  # Should have no effect
         "fields": "whatever,whatever",  # Should have no effect
         "limit": 3,  # Should have no effect
         "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 5",
-        "service": "carto",
+        "service": service,
     }
     response = client.get("/get", params=params)
     assert response.status_code == 200
@@ -238,7 +241,8 @@ def test_valid_sql(client):
     assert data["meta"]["record_count"] == 5
 
 
-def test_valid_sql_too_large(client):
+@pytest.mark.parametrize("service", ["carto"])
+def test_valid_sql_too_large(client: TestClient, service: str):
     """Test that the `sql` parameter works will error if the response from Carto
     is too large to handle but smaller than a timeout"""
     params = {
@@ -249,7 +253,8 @@ def test_valid_sql_too_large(client):
 
 
 @pytest.mark.parametrize("table", GOOD_TABLES)
-def test_valid_no_service(client: TestClient, table: str):
+@pytest.mark.parametrize("service", [None])
+def test_valid_no_service(client: TestClient, table: str, service: None):
     """Test that the API works if no `service` is provided"""
     params = {"table": table, "limit": 1}
     response = client.get("/get", params=params)
@@ -309,18 +314,18 @@ def compare_dicts(
 # The API should be well-enough designed that the user never receives
 # "Internal Server Error" as that would leave them clueless as to what went wrong.
 
-
-def test_invalid_nothing(client):
+@pytest.mark.parametrize("service", [None])
+def test_invalid_nothing(client: TestClient, service: None):
     """Test that the API fails if no `sql` or `table` parameters passed"""
     response = client.get("/get")
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
 
-
-def test_invalid_nothing2(client):
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_nothing2(client: TestClient, service: str):
     """Test that the API fails if no `sql` or `table` parameters passed"""
-    params = {"service": "ago"}
+    params = {"service": service}
     response = client.get("/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
@@ -406,7 +411,8 @@ def test_invalid_sql(client: TestClient, service: str):
     assert "errors" in data
 
 
-def test_invalid_sql_large_payload(client):
+@pytest.mark.parametrize("service", ["None"])
+def test_invalid_sql_large_payload(client: TestClient, service: None):
     """Test that the API fails if too large of a dataset is requsted"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
@@ -417,7 +423,8 @@ def test_invalid_sql_large_payload(client):
     assert "errors" in data
 
 
-def test_invalid_no_service(client):
+@pytest.mark.parametrize("service", [None])
+def test_invalid_no_service(client: TestClient, service: None):
     """Test that the API fails if an invalid `table` parameter is passed and no
     `service` is selected"""
     params = {"table": "bad_table", "limit": 1}
