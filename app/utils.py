@@ -47,6 +47,7 @@ class SchemaCache:
         """Check if the API has the latest commit of the schemas repository"""
         print("Checking latest commit")
         path = os.path.join(self.folder, ".git")
+        commit = None
         if os.path.isdir(path):  # Local development
             with open(os.path.join(path, "refs", "heads", "main")) as f:
                 commit = f.readline().strip()
@@ -58,7 +59,9 @@ class SchemaCache:
                 if match:
                     commit = match.group(1).strip()
                     assert commit
-        if commit != self.latest_commit:
+        else:
+            print(f"Warning: {path} does not exist??")
+        if commit != self.latest_commit and commit:
             self.update()
             self.latest_commit = commit
 
