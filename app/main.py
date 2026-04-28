@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
     schema_cache.check_latest_commit()
     commit_check_task = create_task(schema_cache.loop_commit_check())
     await session_manager.start()
+    assert schema_cache.cache
     yield
     commit_check_task.cancel()
     await session_manager.stop()
@@ -87,25 +88,25 @@ async def get_data(
     table: Annotated[
         str | None,
         Query(
-            description=f"""Name of table to retrieve. Either `table` or `sql` 
-            parameter is required. Ignored if `sql` parameter is provided. Need an 
-            example tale? Try `table=dor_parcel`. 
+            description=f"""Name of table to retrieve. Either `table` or `sql`
+            parameter is required. Ignored if `sql` parameter is provided. Need an
+            example tale? Try `table=dor_parcel`.
             {make_param_api_descriptions(api_manager, "table")}"""
         ),
     ] = None,
     fields: Annotated[
         str | None,
         Query(
-            description=f"""List of fields to retrieve, taking the form 
-            _field_1_,_field_2_,... To receive all fields, do not include this parameter. 
-            Writing fields=* will return an error. Ignored if `sql` or 
+            description=f"""List of fields to retrieve, taking the form
+            _field_1_,_field_2_,... To receive all fields, do not include this parameter.
+            Writing fields=* will return an error. Ignored if `sql` or
             `count_only` parameters are provided.{make_param_api_descriptions(api_manager, "fields")}"""
         ),
     ] = None,
     where: Annotated[
         str | None,
         Query(
-            description=f"""An SQL _WHERE_ clause to filter data. Ignored if 
+            description=f"""An SQL _WHERE_ clause to filter data. Ignored if
             `sql` parameter is provided.{make_param_api_descriptions(api_manager, "where")}"""
         ),
     ] = None,
@@ -113,48 +114,48 @@ async def get_data(
         int | None,
         Query(
             description=f"""Limit to the number of records to return. AGO enforces
-            a limit specific to each table (frequently 2,000 records); for Carto, this API 
-            enforces a limit of 1,000 records as Carto otherwise does not have 
-            limits. Any user-provided limit smaller than those takes precedence. 
+            a limit specific to each table (frequently 2,000 records); for Carto, this API
+            enforces a limit of 1,000 records as Carto otherwise does not have
+            limits. Any user-provided limit smaller than those takes precedence.
             Ignored if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions(api_manager, "limit")}"""
         ),
     ] = None,
     out_sr: Annotated[
         int,
         Query(
-            description=f"""Spatial Reference to return geometric records in. 
-            Default SRID is WGS84 (4326). Ignored if dataset is not geometric, or `sql` or `count_only` 
+            description=f"""Spatial Reference to return geometric records in.
+            Default SRID is WGS84 (4326). Ignored if dataset is not geometric, or `sql` or `count_only`
             parameters are provided.{make_param_api_descriptions(api_manager, "count_only")}"""
         ),
     ] = AbstractWorker.DEFAULT_SRID,
     count_only: Annotated[
         bool,
         Query(
-            description=f"""Return record count of provided query. Ignored if 
+            description=f"""Return record count of provided query. Ignored if
             `sql` parameter is provided.{make_param_api_descriptions(api_manager, "count_only")}"""
         ),
     ] = False,
     sql: Annotated[
         str | None,
         Query(
-            description=f"""Raw SQL string to use when retrieving data. Users 
-            should request no more than ~2,000 rows to avoid an `HTTP 413` error. 
-            Either `table` or `sql` parameter is required. Need an example? Try 
+            description=f"""Raw SQL string to use when retrieving data. Users
+            should request no more than ~2,000 rows to avoid an `HTTP 413` error.
+            Either `table` or `sql` parameter is required. Need an example? Try
             `sql=SELECT * FROM DOR_PARCEL LIMIT 10`.{make_param_api_descriptions(api_manager, "sql")}"""
         ),
     ] = None,
     service: Annotated[
         Service | None,
         Query(
-            description="""Name of API service to use. If not provided, the first 
-            API service to locate the table will be used. Ignored if `sql` parameter 
+            description="""Name of API service to use. If not provided, the first
+            API service to locate the table will be used. Ignored if `sql` parameter
             is provided."""
         ),
     ] = None,
     timeout: Annotated[
         float,
         Query(
-            description="""Amount of time in seconds to wait for response from downstream APIs 
+            description="""Amount of time in seconds to wait for response from downstream APIs
             before raising a timeout error""",
             gt=0,
             lt=300,

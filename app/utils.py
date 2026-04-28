@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from asyncio import sleep
 from enum import Enum
-import asyncio
 
 import aiohttp
 from fastapi.exceptions import HTTPException
@@ -46,6 +44,8 @@ class SchemaCache:
 
     def check_latest_commit(self):
         # Resolve the symlink to its actual current directory
+        # Or if we're locally developing, to the full path of the repo.
+        # Either will work with realpath().
         # (e.g., /var/git/.worktrees/<some_commit_hash>/)
         current_target = os.path.realpath(self.folder)
 
