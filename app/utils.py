@@ -5,6 +5,7 @@ import os
 import re
 from asyncio import sleep
 from enum import Enum
+import asyncio
 
 import aiohttp
 from fastapi.exceptions import HTTPException
@@ -26,7 +27,7 @@ class SchemaCache:
     def __init__(self):
         self.folder = "/var/git/databridge-schemas"
         self.commit_check_delay = 300
-        self.latest_commit: str = None
+        self.latest_repo_target: str = None
         self.cache: dict[str, TableSchema] = {}
         self.invalid_fields: list[str] = [
             "shape",  # Carto
@@ -44,26 +45,25 @@ class SchemaCache:
             await sleep(self.commit_check_delay)
 
     def check_latest_commit(self):
-        """Check if the API has the latest commit of the schemas repository"""
-        print("Checking latest commit")
-        path = os.path.join(self.folder, ".git")
-        commit = None
-        if os.path.isdir(path):  # Local development
-            with open(os.path.join(path, "refs", "heads", "main")) as f:
-                commit = f.readline().strip()
-        elif os.path.isfile(path):  # Prod environment
-            print(f"DEBUG: {path}")
-            with open(path) as f:
-                content = f.read()
-                match = re.search(r"worktrees/([a-f0-9]{40})", content)
-                if match:
-                    commit = match.group(1).strip()
-                    assert commit
-        else:
-            print(f"Warning: {path} does not exist??")
-        if commit != self.latest_commit and commit:
-            self.update()
-            self.latest_commit = commit
+        # Resolve the symlink to its actual current directory
+        # (e.g., /var/git/.worktrees/<some_commit_hash>/)
+        current_target = os.path.realpath(self.folder)
+
+        if getattr(self, 'latest_repo_target', None) != current_target:
+            print("New symlink target detected. Updating SchemaCache.")
+            try:
+                # Offload the blocking I/O to a separate thread
+                self.latest_repo_target = current_target
+                # Overwrite the folder path with the new target
+                self.folder = current_target
+                self.update()
+
+            except FileNotFoundError:
+                # Expected race condition: git-sync swapped directories while we were reading.
+                # Abort this attempt; the loop will try again on the next tick.
+                print("Update aborted: git-sync modified files during read.")
+            except Exception as e:
+                print(f"Unexpected error updating cache: {e}")
 
     def update(self):
         """Call the functions necessary to update the geometry cache. Note these
