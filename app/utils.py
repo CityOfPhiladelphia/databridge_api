@@ -50,7 +50,7 @@ class SchemaCache:
         current_target = os.path.realpath(self.folder)
 
         if getattr(self, 'latest_repo_target', None) != current_target:
-            print("New symlink target detected. Updating SchemaCache.")
+            print(f"New symlink target detected: {current_target} Updating SchemaCache.")
             try:
                 # Offload the blocking I/O to a separate thread
                 self.latest_repo_target = current_target
