@@ -7,7 +7,7 @@ For local development and testing, copy `env.example` to `.env` and populate it.
 
 Running the API locally:
 
-`uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+`uv run fastapi --env-file=.env fastapi dev`
 
 To run in a docker container, make sure your .env file is setup then run:
 
@@ -15,4 +15,4 @@ To run in a docker container, make sure your .env file is setup then run:
 
 Testing:
 
-`pytest`
+`uv run --env-file=.env pytest --maxfail=4 --tb=short -v`
