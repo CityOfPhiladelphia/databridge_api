@@ -27,13 +27,17 @@ class Carto(AbstractWorker):
             "CARTO_TOKEN"
         )  # token passed in at runtime as env variable. Available at Keeper record "CARTO - New Platform"
         assert self.public_token, "Carto token not provided"
-        self.auth_header = {"Authorization": f"Bearer {self.public_token}"}
+        self.headers = {
+            "Authorization": f"Bearer {self.public_token}",
+            "Cache-Control": "max-age=1800", # Default Carto Cache to 30 minutes to prevent stale responses
+        }
 
     async def get_count(
         self,
         table: str | None,
         where: str | None,
         timeout: float,
+        no_cache: bool,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -47,8 +51,11 @@ class Carto(AbstractWorker):
             q_where = psql.SQL(f"WHERE {where} ")
             query = query + q_where
         params = {"q": query.as_string()}
+        headers = self.headers
+        if no_cache: 
+            headers['cache-control'] = "max-age=0"
         async with session.get(
-            self.base_url, params=params, headers=self.auth_header, timeout=timeout
+            self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
             return await self.normalize_rv_count(request, response)
 
@@ -82,6 +89,7 @@ class Carto(AbstractWorker):
         out_sr: int | None,
         sql: str | None,
         timeout: float,
+        no_cache: bool,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -134,8 +142,11 @@ class Carto(AbstractWorker):
             query = psql.SQL(sql)
             table_schema = None
         params = {"q": query.as_string()}
+        headers = self.headers
+        if no_cache: 
+            headers['cache-control'] = "max-age=0"
         async with session.get(
-            self.base_url, params=params, headers=self.auth_header, timeout=timeout
+            self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
             return await self.normalize_rv(request, response, table_schema, limit, sql)
 

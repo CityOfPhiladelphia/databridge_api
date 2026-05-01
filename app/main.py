@@ -161,6 +161,13 @@ async def get_data(
             lt=300,
         ),
     ] = 30,
+    no_cache: Annotated[
+        bool,
+        Query(
+            description=f"""Request fresh results from downstream APIs, ignoring any HTTP caching. 
+            {make_param_api_descriptions(api_manager, "no_cache")}"""
+        ),
+    ] = False,
     session: aiohttp.ClientSession = Depends(session_manager),
 ) -> ReturnJson | JSONResponse:
     """Use this endpoint to retrieve data from the available
@@ -179,11 +186,12 @@ async def get_data(
         "out_sr": out_sr,
         "count_only": count_only,
         "sql": sql,
-        "token": token,
         "session": session,
         "timeout": timeout,
+        "no_cache": no_cache,
         "request": request,
         "schema_cache": schema_cache,
+        "token": token,
     }
     if sql:
         if service and service.lower() != "carto":
