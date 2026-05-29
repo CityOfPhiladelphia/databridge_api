@@ -64,6 +64,8 @@ class SchemaCache:
                 print("Update aborted: git-sync modified files during read.")
             except Exception as e:
                 print(f"Unexpected error updating cache: {e}")
+        else:
+            print(f'No changes detected. {current_target =}, {self.latest_repo_target =}')
 
     def update(self):
         """Call the functions necessary to update the geometry cache. Note these
