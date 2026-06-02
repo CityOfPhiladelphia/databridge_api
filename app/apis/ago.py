@@ -1,9 +1,17 @@
-# ago.py
+import datetime as dt
+
 import aiohttp
 from fastapi import Request
-import datetime as dt
+
+from ..utils.models import (
+    Error,
+    GeoJsonFeatureCollection,
+    Links,
+    Meta,
+    ReturnJson,
+    TableSchema,
+)
 from .abstract import AbstractWorker, check_fields_valid
-from .models import ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, TableSchema
 
 
 class Ago(AbstractWorker):

@@ -1,19 +1,21 @@
-import aiohttp
-import os
 import datetime as dt
+import os
+
+import aiohttp
 from fastapi import Request
 from psycopg import sql as psql  # Redefine to allow "sql" as a query parameter
-from .abstract import AbstractWorker, check_fields_valid
-from .models import (
-    ReturnJson,
-    Meta,
-    Links,
+
+from ..utils.models import (
     Error,
-    GeoJsonFeatureCollection,
     GeoJsonFeature,
-    TableSchema
+    GeoJsonFeatureCollection,
+    Links,
+    Meta,
+    ReturnJson,
+    TableSchema,
 )
-from .utils_carto import FULL_QUERY
+from ..utils.utils_carto import FULL_QUERY
+from .abstract import AbstractWorker, check_fields_valid
 
 
 class Carto(AbstractWorker):

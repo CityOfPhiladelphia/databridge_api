@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 from asyncio import sleep
@@ -9,9 +10,9 @@ import aiohttp
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 
-from .abstract import AbstractWorker
-from .ago import Ago
-from .carto import Carto
+from ..apis.abstract import AbstractWorker
+from ..apis.ago import Ago
+from ..apis.carto import Carto
 from .models import ReturnJson, TableSchema
 
 
@@ -23,7 +24,9 @@ class SchemaCache:
     """
 
     def __init__(self):
-        self.folder = "/var/git/databridge-schemas"
+        self._prod_folder = "/var/git/databridge-schemas"
+        self._local_dev_folder = "/scripts/databridge-schemas"
+        self.folder = self.set_folder()
         self.commit_check_delay = 300
         self.latest_repo_target: str = None
         self.cache: dict[str, TableSchema] = {}
@@ -33,7 +36,19 @@ class SchemaCache:
             "Shape__Length",  # AGO (some tables, such as dor_parcel)
             "gdb_geomattr_data",  # AGO (some tables, such as dor_parcel)
         ]
+        self.latest_check: dt.datetime = None
+        self.latest_update: dt.datetime = None
 
+    def set_folder(self): 
+        if os.path.isdir(self._prod_folder): 
+            return self._prod_folder
+        elif os.path.isdir(self._local_dev_folder): 
+            return self._local_dev_folder
+        else: 
+            raise AssertionError(
+                f'databridge-schemas repo not found at "{self._prod_folder}" or "{self._local_dev_folder}"'
+            )
+    
     async def loop_commit_check(self):
         """Run a continuous asynchronous loop to quickly absorb any updates to the
         schemas repository
@@ -48,6 +63,7 @@ class SchemaCache:
         # Either will work with realpath().
         # (e.g., /var/git/.worktrees/<some_commit_hash>/)
         current_target = os.path.realpath(self.folder)
+        self.latest_check = dt.datetime.now(tz=dt.UTC)
 
         if getattr(self, 'latest_repo_target', None) != current_target:
             print(f"New symlink target detected: {current_target} Updating SchemaCache.")
@@ -72,9 +88,7 @@ class SchemaCache:
         functions block the API from responding to network requests.
         """
         print("Updating SchemaCache")
-        assert os.path.isdir(self.folder), (
-            f"databridge-schemas repo not found at {self.folder}!!"
-        )
+        self.latest_update = dt.datetime.now(tz=dt.UTC)
         replacement_cache = self.search_recursively(self.folder)
         self.cache = replacement_cache
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
@@ -288,3 +302,8 @@ def make_param_api_descriptions(api_manager: Api_Manager, param: str) -> str:
         if param in api_manager.map_api_to_params[api]:
             s.append(api.name)
     return "\n\n_Used by:_ " + ", ".join(s)
+
+
+schema_cache = SchemaCache()
+api_manager = Api_Manager()
+session_manager = SessionManager()

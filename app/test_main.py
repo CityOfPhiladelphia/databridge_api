@@ -1,8 +1,10 @@
-from fastapi.testclient import TestClient
-import pytest
-from .main import api_manager, app
-from .utils_tests import generate_ago_token
 from collections.abc import Generator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from .main import api_manager, app
+from .utils.utils_tests import generate_ago_token
 
 # Response validation handled by pydantic on API server itself
 # Still have to coerce FastAPI default validation errors to JSON:API spec

@@ -1,11 +1,14 @@
 from __future__ import annotations
-from .models import ReturnJson, GeoJsonFeature, TableSchema
+
+import datetime as dt
+import inspect
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+
 from fastapi import Request
 from fastapi.exceptions import HTTPException
-import inspect
-import datetime as dt
-from collections.abc import Callable
+
+from ..utils.models import GeoJsonFeature, ReturnJson, TableSchema
 
 
 class AbstractWorker(ABC):
