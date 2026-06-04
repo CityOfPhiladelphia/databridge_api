@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from ..apis.abstract import AbstractWorker
 from ..apis.ago import Ago
 from ..apis.carto import Carto
+from ..apis.databridge import Databridge
 from .models import ReturnJson, TableSchema
 
 
@@ -251,6 +252,7 @@ class Service(str, Enum):
 
     AGO = "ago"
     CARTO = "carto"
+    DATABRIDGE = "databridge"
 
 
 class Api_Manager:
@@ -263,6 +265,7 @@ class Api_Manager:
         self.map_str_to_api: dict[str, AbstractWorker] = {
             "ago": Ago(),
             "carto": Carto(),
+            "databridge": Databridge(),
         }  # This is the initial order searched if no API is specified, and is the query param the user must submit
         self.map_api_to_params: dict[AbstractWorker, list[str]] = {}
         self.api_priority_queue: list[AbstractWorker] = []
