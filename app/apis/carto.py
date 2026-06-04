@@ -39,7 +39,7 @@ class Carto(AbstractWorker):
         table: str | None,
         where: str | None,
         timeout: float,
-        no_cache: bool,
+        max_age: int,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -54,8 +54,8 @@ class Carto(AbstractWorker):
             query = query + q_where
         params = {"q": query.as_string()}
         headers = self.headers
-        if no_cache: 
-            headers['cache-control'] = "max-age=0"
+        if max_age:
+            headers["cache-control"] = f"max-age={max_age}"
         async with session.get(
             self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
@@ -91,7 +91,7 @@ class Carto(AbstractWorker):
         out_sr: int | None,
         sql: str | None,
         timeout: float,
-        no_cache: bool,
+        max_age: int,
         session: aiohttp.ClientSession,
         request: Request,
         **kwargs,
@@ -145,8 +145,8 @@ class Carto(AbstractWorker):
             table_schema = None
         params = {"q": query.as_string()}
         headers = self.headers
-        if no_cache: 
-            headers['cache-control'] = "max-age=0"
+        if max_age:
+            headers["cache-control"] = f"max-age={max_age}"
         async with session.get(
             self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:

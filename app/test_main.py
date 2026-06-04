@@ -49,7 +49,7 @@ def token() -> str:
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_valid(client: TestClient, service: str, table: str):
     """Test that each service works"""
-    params = {"table": table, "service": service, "no_cache": True}
+    params = {"table": table, "service": service, "max_age": 0}
     response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
@@ -67,7 +67,7 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
         "limit": 5,
         "count_only": count_only,
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
@@ -88,7 +88,7 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
 def test_valid_private_no_interfere(client: TestClient, service: str, token: str):
     """Test that a private token doesn't interfere with other APIs"""
     table = GOOD_TABLES[0]
-    params = {"table": table, "limit": 5, "service": service, "no_cache": True}
+    params = {"table": table, "limit": 5, "service": service, "max_age": 0}
     response = client.get(
         f"{public_prefix}/get", params=params, headers={"Authorization": f"Bearer {token}"}
     )
@@ -106,7 +106,7 @@ def test_valid_fields(client: TestClient, service: str):
         "limit": 2,
         "fields": "objectid,document_id,document_type,display_date",
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
@@ -129,7 +129,7 @@ def test_valid_fields2(client: TestClient, service: str):
         "limit": 2,
         "fields": "addr_std",
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
@@ -147,7 +147,7 @@ def test_valid_where(client: TestClient, service: str):
         "table": table,
         "where": "objectid <= 2",
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
@@ -169,7 +169,7 @@ def test_valid_where_parethesization(client: TestClient, service: str):
         "where": "objectid >= 1 OR objectid >= 3",
         "limit": LIMIT,
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
@@ -189,7 +189,7 @@ def test_valid_where_parethesization(client: TestClient, service: str):
 def test_valid_limit_next(client: TestClient, service: str, table: str):
     """Test that the `limit` parameter works and that the `next` url works"""
     LIMIT = 2
-    params = {"table": table, "limit": LIMIT, "service": service, "no_cache": True}
+    params = {"table": table, "limit": LIMIT, "service": service, "max_age": 0}
     response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
@@ -224,7 +224,7 @@ def test_valid_count_only(client: TestClient, service: str):
         "count_only": "true",
         "where": "objectid <= 5",
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
@@ -241,7 +241,7 @@ def test_valid_srid(client: TestClient, service: str):
         "limit": 2,
         "out_sr": 4326,
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
@@ -268,7 +268,7 @@ def test_valid_sql(client: TestClient, service: str):
         "limit": 3,  # Should have no effect
         "sql": f"SELECT * FROM {table} LIMIT 5",
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
@@ -283,7 +283,7 @@ def test_valid_sql_too_large(client: TestClient, service: str):
     is too large to handle but smaller than a timeout"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 413
@@ -293,7 +293,7 @@ def test_valid_sql_too_large(client: TestClient, service: str):
 @pytest.mark.parametrize("service", [None])
 def test_valid_no_service(client: TestClient, table: str, service: None):
     """Test that the API works if no `service` is provided"""
-    params = {"table": table, "limit": 1, "no_cache": True}
+    params = {"table": table, "limit": 1, "max_age": 0}
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
@@ -307,7 +307,7 @@ def test_valid_timeout(client: TestClient, service: str):
         "table": GOOD_TABLES[0],
         "timeout": 0.001,
         "service": service,
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 408
@@ -319,7 +319,7 @@ both in timestamp fields and in geometry fields that are unrelated to this API.
 @pytest.mark.parametrize("table", GOOD_TABLES)
 def test_same_response(client: TestClient, table: str):
     """Test that the API timeout parameter returns the correct error code"""
-    params = {"table": table, "limit": 1, "no_cache": True}
+    params = {"table": table, "limit": 1, "max_age": 0}
     ago_params = params | {"service": "ago"}
     carto_params = params | {"service": "carto"}
     ago_response = client.get(f"{public_prefix}/get", params=ago_params)
@@ -461,7 +461,7 @@ def test_invalid_sql_large_payload(client: TestClient, service: None):
     """Test that the API fails if too large of a dataset is requsted"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
-        "no_cache": True,
+        "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500

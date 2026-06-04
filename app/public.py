@@ -104,13 +104,15 @@ async def get_data(
             lt=300,
         ),
     ] = 30,
-    no_cache: Annotated[
-        bool,
+    max_age: Annotated[
+        int,
         Query(
-            description=f"""Request fresh results from downstream APIs, ignoring any HTTP caching. 
-            {make_param_api_descriptions(api_manager, "no_cache")}"""
+            description=f"""Request fresh results if cached results are older than _max_age_ in seconds. 0 means request fresh results only, but a request will take longer and demand more server resources to complete. 31,536,000 seconds equals 365 days (default). Use this parameter if you are concerned that table data is incorrect.
+            {make_param_api_descriptions(api_manager, "max_age")}""",
+            ge=0,
+            le=31536000,
         ),
-    ] = False,
+    ] = 31536000,
     session: aiohttp.ClientSession = Depends(session_manager),
 ) -> ReturnJson | JSONResponse:
     """Use this endpoint to retrieve data from the available
@@ -133,7 +135,7 @@ async def get_data(
         "sql": sql,
         "session": session,
         "timeout": timeout,
-        "no_cache": no_cache,
+        "max_age": max_age,
         "request": request,
         "schema_cache": schema_cache,
         "token": token,
