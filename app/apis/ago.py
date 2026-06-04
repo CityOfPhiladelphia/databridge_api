@@ -131,7 +131,7 @@ class Ago(AbstractWorker):
             if "error" not in data:
                 records = data["features"]
                 records = self.harmonize_timestamp_fields(records, table_schema)
-                gjfc = GeoJsonFeatureCollection(features=records)
+                gjfc = GeoJsonFeatureCollection(**data)
                 meta.record_count = len(gjfc.features)
                 try:
                     data["properties"]["exceededTransferLimit"]
@@ -139,7 +139,6 @@ class Ago(AbstractWorker):
                     links.next = next_url
                 except KeyError:
                     pass
-                gjfc = GeoJsonFeatureCollection(**data)
                 rv = ReturnJson(data=gjfc, links=links, meta=meta)
                 return rv
             else:
