@@ -15,6 +15,23 @@ from .utils.utils import (
 )
 
 
+def revise_openapi_paths(): 
+    """Revise the URL paths in the OpenAPI docs to remove the public path prefix. The 
+    plan is to host this App behind a reverse proxy and only allow public access 
+    to the public endpoints covered by the Public Prefix (currently "/api"). Because 
+    this directory will be the root for the reverse proxy and users will not know this,
+    the URL paths need to remove the public prefix. 
+    """    
+    app.openapi()
+    revised_openapi_paths = {}
+    openapi_paths = app.openapi_schema["paths"]
+    for path in openapi_paths:
+        if path.startswith(public_prefix):
+            new_path = path.removeprefix(public_prefix)
+            revised_openapi_paths[new_path] = openapi_paths[path]
+    app.openapi_schema["paths"] = revised_openapi_paths
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Define code to run before the FastAPI app starts and after it shuts down,
@@ -40,6 +57,8 @@ app = FastAPI(
 )
 app.include_router(internal_router)
 app.include_router(public_router)
+revise_openapi_paths()
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(

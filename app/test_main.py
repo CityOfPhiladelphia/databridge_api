@@ -3,7 +3,9 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from .main import api_manager, app
+from .main import app
+from .public import public_prefix
+from .utils.utils import api_manager
 from .utils.utils_tests import generate_ago_token
 
 # Response validation handled by pydantic on API server itself
@@ -48,7 +50,7 @@ def token() -> str:
 def test_valid(client: TestClient, service: str, table: str):
     """Test that each service works"""
     params = {"table": table, "service": service, "no_cache": True}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
     assert rv["links"]["self"] == response.url
@@ -67,11 +69,11 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
 
     headers = {"Authorization": f"Bearer {token}"}
-    response = client.get("/get", params=params, headers=headers)
+    response = client.get(f"{public_prefix}/get", params=params, headers=headers)
     rv = response.json()
     assert response.status_code == 200
     assert rv["links"]["self"] == response.url
@@ -88,7 +90,7 @@ def test_valid_private_no_interfere(client: TestClient, service: str, token: str
     table = GOOD_TABLES[0]
     params = {"table": table, "limit": 5, "service": service, "no_cache": True}
     response = client.get(
-        "/get", params=params, headers={"Authorization": f"Bearer {token}"}
+        f"{public_prefix}/get", params=params, headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 200
     rv = response.json()
@@ -106,7 +108,7 @@ def test_valid_fields(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
     data = rv["data"]
@@ -129,7 +131,7 @@ def test_valid_fields2(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
     data = rv["data"]
@@ -147,7 +149,7 @@ def test_valid_where(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
     assert rv["meta"]["record_count"] == 2
@@ -169,7 +171,7 @@ def test_valid_where_parethesization(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
     next_url = rv["links"]["next"]
@@ -188,7 +190,7 @@ def test_valid_limit_next(client: TestClient, service: str, table: str):
     """Test that the `limit` parameter works and that the `next` url works"""
     LIMIT = 2
     params = {"table": table, "limit": LIMIT, "service": service, "no_cache": True}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
@@ -224,7 +226,7 @@ def test_valid_count_only(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
     assert rv["meta"]["records_total"] == 5
@@ -241,14 +243,14 @@ def test_valid_srid(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     rv = response.json()
     assert response.status_code == 200
     data = rv["data"]
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
 
     params["out_sr"] = 2272
-    response2 = client.get("/get", params=params)
+    response2 = client.get(f"{public_prefix}/get", params=params)
     rv2 = response2.json()
     assert response2.status_code == 200
     data2 = rv2["data"]
@@ -268,7 +270,7 @@ def test_valid_sql(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
     assert rv["meta"]["record_count"] == 5
@@ -283,7 +285,7 @@ def test_valid_sql_too_large(client: TestClient, service: str):
         "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 413
 
 
@@ -292,7 +294,7 @@ def test_valid_sql_too_large(client: TestClient, service: str):
 def test_valid_no_service(client: TestClient, table: str, service: None):
     """Test that the API works if no `service` is provided"""
     params = {"table": table, "limit": 1, "no_cache": True}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
@@ -307,7 +309,7 @@ def test_valid_timeout(client: TestClient, service: str):
         "service": service,
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 408
 
 
@@ -320,8 +322,8 @@ def test_same_response(client: TestClient, table: str):
     params = {"table": table, "limit": 1, "no_cache": True}
     ago_params = params | {"service": "ago"}
     carto_params = params | {"service": "carto"}
-    ago_response = client.get("/get", params=ago_params)
-    carto_response = client.get("/get", params=carto_params)
+    ago_response = client.get(f"{public_prefix}/get", params=ago_params)
+    carto_response = client.get(f"{public_prefix}/get", params=carto_params)
     assert ago_response.status_code == 200 and carto_response.status_code == 200
     ago_json = ago_response.json()
     ago_properties = ago_json["data"]["features"][0]['properties']
@@ -360,7 +362,7 @@ def compare_dicts(
 @pytest.mark.parametrize("service", [None])
 def test_invalid_nothing(client: TestClient, service: None):
     """Test that the API fails if no `sql` or `table` parameters passed"""
-    response = client.get("/get")
+    response = client.get(f"{public_prefix}/get")
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -369,7 +371,7 @@ def test_invalid_nothing(client: TestClient, service: None):
 def test_invalid_nothing2(client: TestClient, service: str):
     """Test that the API fails if no `sql` or `table` parameters passed"""
     params = {"service": service}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -379,7 +381,7 @@ def test_invalid_nothing2(client: TestClient, service: str):
 def test_invalid_table(client: TestClient, service: str):
     """Test that the API fails if an invalid `table` parameter is passed"""
     params = {"table": "bad_table", "service": service}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -394,7 +396,7 @@ def test_invalid_fields(client: TestClient, service: str):
         "fields": "badfield",
         "service": service,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -408,7 +410,7 @@ def test_invalid_where(client: TestClient, service: str):
         "where": "not_a_column <= 2",
         "service": service,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -423,7 +425,7 @@ def test_invalid_limit(client: TestClient, service: str, limit: str):
         "limit": limit,
         "service": service,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert (
         response.status_code >= 400 and response.status_code <= 500
     )  # Carto returns a 500 error here
@@ -438,7 +440,7 @@ def test_invalid_count_only(
 ):
     """Test that the API fails if an invalid `count_only` table is passed"""
     params = {"table": "ASNTEHUSA", "count_only": "true", "service": service}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -448,7 +450,7 @@ def test_invalid_count_only(
 def test_invalid_sql(client: TestClient, service: str):
     """Test that the API fails if invalid `sql` parameter is passed"""
     params = {"sql": "SELECT * FROM ANSTEHUSANTH", "service": service}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -461,7 +463,7 @@ def test_invalid_sql_large_payload(client: TestClient, service: None):
         "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
         "no_cache": True,
     }
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
@@ -472,7 +474,7 @@ def test_invalid_no_service(client: TestClient, service: None):
     """Test that the API fails if an invalid `table` parameter is passed and no
     `service` is selected"""
     params = {"table": "bad_table", "limit": 1}
-    response = client.get("/get", params=params)
+    response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data

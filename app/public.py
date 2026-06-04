@@ -121,8 +121,10 @@ async def get_data(
         token = request.headers["authorization"]
     else:
         token = None
+    if table: 
+        table = table.lower()
     params = {
-        "table": table.lower(),
+        "table": table,
         "fields": fields,
         "where": where,
         "limit": limit,

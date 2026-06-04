@@ -13,6 +13,16 @@ async def get_schemas(
         str | None, "Name of table to retrieve",
     ] = None,
 ) -> dict:
+    """Return schema information for debugging purposes. This endpoint is meant to 
+    be internally accessible only
+
+    Args:
+        table (str, optional): If provided, only return the schema for the specified 
+        table if it exists. Defaults to None, in which case all schemas are returned.
+
+    Returns:
+        dict: Information about the schema cache
+    """    
     rv = {
         "latest_check": schema_cache.latest_check,
         "latest_update": schema_cache.latest_update,
@@ -27,7 +37,7 @@ async def get_schemas(
         try:
             rv['schema'] = {table: schema_cache.cache[table]}
         except KeyError: 
-            rv['schema'] = []
+            rv['schema'] = {table: "Schema Not Found"}
     else:
         rv["schemas"] = schema_cache.cache
 
