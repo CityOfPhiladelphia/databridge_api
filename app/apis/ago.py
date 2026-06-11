@@ -130,7 +130,7 @@ class Ago(AbstractWorker):
             data = await response.json()
             if "error" not in data:
                 records = data["features"]
-                records = self.harmonize_timestamp_fields(records, table_schema)
+                self.harmonize_timestamp_fields(records, table_schema)
                 gjfc = GeoJsonFeatureCollection(**data)
                 meta.record_count = len(gjfc.features)
                 try:
@@ -162,16 +162,13 @@ class Ago(AbstractWorker):
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
-    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema) -> list[dict]: 
-        """Return a consistent representation of timestamp fields. AGO returns 
+    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema): 
+        """Coerce to a consistent representation of timestamp fields. AGO returns 
         timestamp fields as milliseconds since the epoch
 
         Args:
             records (list[dict]): Data records
             table_schema (TableSchema): TableSchema
-
-        Returns:
-            list[dict]: Updated records
         """        
         for record in records:
             for field in record["properties"]:
@@ -180,7 +177,6 @@ class Ago(AbstractWorker):
                         record["properties"][field] = dt.datetime.fromtimestamp(
                             record["properties"][field] / 1000
                         )
-        return records
 
     def mask_service_url(
         self, request: Request, response: aiohttp.ClientResponse

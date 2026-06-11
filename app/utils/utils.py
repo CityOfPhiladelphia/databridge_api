@@ -265,7 +265,7 @@ class Api_Manager:
         self.map_str_to_api: dict[str, AbstractWorker] = {
             "ago": Ago(),
             "carto": Carto(),
-            "databridge": Databridge(),
+            # "databridge": Databridge(),
         }  # This is the initial order searched if no API is specified, and is the query param the user must submit
         self.map_api_to_params: dict[AbstractWorker, list[str]] = {}
         self.api_priority_queue: list[AbstractWorker] = []

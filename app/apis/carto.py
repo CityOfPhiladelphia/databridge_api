@@ -174,7 +174,7 @@ class Carto(AbstractWorker):
         if response.ok:
             if not sql:
                 records = data["rows"][0]["jsonb_build_object"]['features']
-                records = self.harmonize_timestamp_fields(records, table_schema)
+                self.harmonize_timestamp_fields(records, table_schema)
                 gjfc = GeoJsonFeatureCollection(
                     type="FeatureCollection", features=records
                 )
@@ -200,18 +200,13 @@ class Carto(AbstractWorker):
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
-    def harmonize_timestamp_fields(
-        self, records: list[dict], table_schema: TableSchema
-    ) -> list[dict]:
-        """Return a consistent representation of timestamp fields. Carto returns 
+    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema):
+        """Coerce to a consistent representation of timestamp fields. Carto returns 
         timestamps in ISO format
 
         Args:
             records (list[dict]): Data records
             table_schema (TableSchema): TableSchema
-
-        Returns:
-            list[dict]: Updated records
         """
         for record in records:
             for field in record["properties"]:
@@ -220,4 +215,3 @@ class Carto(AbstractWorker):
                         record["properties"][field] = dt.datetime.fromisoformat(
                             record["properties"][field]
                         )
-        return records
