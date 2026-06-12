@@ -4,7 +4,7 @@ import datetime as dt
 from fastapi import Request
 from psycopg import sql as psql  # Redefine to allow "sql" as a query parameter
 from .abstract import AbstractWorker, check_fields_valid
-from .models import (
+from ..utils.models import (
     ReturnJson,
     Meta,
     Links,
