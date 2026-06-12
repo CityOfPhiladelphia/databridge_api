@@ -1,11 +1,14 @@
 from __future__ import annotations
-from .models import ReturnJson, GeoJsonFeature, TableSchema
+
+import datetime as dt
+import inspect
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+
 from fastapi import Request
 from fastapi.exceptions import HTTPException
-import inspect
-import datetime as dt
-from collections.abc import Callable
+
+from ..utils.models import GeoJsonFeature, ReturnJson, TableSchema
 
 
 class AbstractWorker(ABC):
@@ -41,18 +44,13 @@ class AbstractWorker(ABC):
         raise NotImplementedError
     
     @abstractmethod
-    def harmonize_timestamp_fields(
-        self, records: list[dict], table_schema: TableSchema
-    ) -> list[dict]:
-        """Return a consistent representation of timestamp fields. Implementation 
+    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema):
+        """Coerce to a consistent representation of timestamp fields. Implementation 
         is API-specific
 
         Args:
             records (list[dict]): Data records
             table_schema (TableSchema): TableSchema
-
-        Returns:
-            list[dict]: Updated records
         """
         raise NotImplementedError
 

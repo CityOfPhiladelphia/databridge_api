@@ -1,9 +1,17 @@
-# ago.py
+import datetime as dt
+
 import aiohttp
 from fastapi import Request
-import datetime as dt
+
+from ..utils.models import (
+    Error,
+    GeoJsonFeatureCollection,
+    Links,
+    Meta,
+    ReturnJson,
+    TableSchema,
+)
 from .abstract import AbstractWorker, check_fields_valid
-from .models import ReturnJson, Meta, Links, Error, GeoJsonFeatureCollection, TableSchema
 
 
 class Ago(AbstractWorker):
@@ -122,8 +130,8 @@ class Ago(AbstractWorker):
             data = await response.json()
             if "error" not in data:
                 records = data["features"]
-                records = self.harmonize_timestamp_fields(records, table_schema)
-                gjfc = GeoJsonFeatureCollection(features=records)
+                self.harmonize_timestamp_fields(records, table_schema)
+                gjfc = GeoJsonFeatureCollection(**data)
                 meta.record_count = len(gjfc.features)
                 try:
                     data["properties"]["exceededTransferLimit"]
@@ -131,7 +139,6 @@ class Ago(AbstractWorker):
                     links.next = next_url
                 except KeyError:
                     pass
-                gjfc = GeoJsonFeatureCollection(**data)
                 rv = ReturnJson(data=gjfc, links=links, meta=meta)
                 return rv
             else:
@@ -155,16 +162,13 @@ class Ago(AbstractWorker):
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
-    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema) -> list[dict]: 
-        """Return a consistent representation of timestamp fields. AGO returns 
+    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema): 
+        """Coerce to a consistent representation of timestamp fields. AGO returns 
         timestamp fields as milliseconds since the epoch
 
         Args:
             records (list[dict]): Data records
             table_schema (TableSchema): TableSchema
-
-        Returns:
-            list[dict]: Updated records
         """        
         for record in records:
             for field in record["properties"]:
@@ -173,7 +177,6 @@ class Ago(AbstractWorker):
                         record["properties"][field] = dt.datetime.fromtimestamp(
                             record["properties"][field] / 1000
                         )
-        return records
 
     def mask_service_url(
         self, request: Request, response: aiohttp.ClientResponse

@@ -1,3 +1,6 @@
+# Requires PostGIS version >= 3.5
+# As of 2026-05, Carto V2/V3 both use 3.6 
+# while Databridge-V2 uses version 3.4
 FULL_QUERY = """
 WITH subq as (
     {subq}
