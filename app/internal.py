@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter
+from fastapi.exceptions import HTTPException
 
 from .utils.utils import schema_cache
 
@@ -36,8 +37,12 @@ async def get_schemas(
         table = table.lower()
         try:
             rv['schema'] = {table: schema_cache.cache[table]}
-        except KeyError: 
-            rv['schema'] = {table: "Schema Not Found"}
+        except KeyError:
+            raise HTTPException(
+                status_code=404,
+                detail=f"The requested schema '{table}' was not found",
+                headers={"title": "Not Found"},
+            )
     else:
         rv["schemas"] = schema_cache.cache
 
