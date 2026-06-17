@@ -145,14 +145,14 @@ class SchemaCache:
         table_schema = TableSchema(**schema)
         for field in table_schema.fields:
             if field.name not in self.invalid_fields:
-                table_schema._api_valid_fields.append(field.name)
+                table_schema.valid_fields.append(field.name)
             if field.type == "geometry":
-                assert table_schema._api_geom_column is None, (
-                    f'Table "{table}" has multiple geometry columns: {[table_schema._api_geom_column, field.name]}'
+                assert table_schema.geom_column is None, (
+                    f'Table "{table}" has multiple geometry columns: {[table_schema.geom_column, field.name]}'
                 )
-                table_schema._api_geom_column = field.name
+                table_schema.geom_column = field.name
             elif field.type.startswith("timestamp"):
-                table_schema._api_timestamp_fields.append(field.name)
+                table_schema.timestamp_fields.append(field.name)
         return table_schema
 
     def retrieve_table_schema(self, table: str) -> dict:

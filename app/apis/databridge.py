@@ -65,23 +65,19 @@ class Databridge(AbstractWorker):
         timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
+        schema: TableSchema, 
         **kwargs,
     ) -> ReturnJson:
-        schema_cache = kwargs["schema_cache"]
-        table_schema = schema_cache.retrieve_table_schema(table)
-        geom_column = table_schema._api_geom_column
-        valid_fields = table_schema._api_valid_fields
-
         url = f'{self.base_url}/{table}'
         params = {}
 
         if not fields:
-            fields = ", ".join([field for field in valid_fields])
+            fields = ", ".join([field for field in schema.valid_fields])
         else:
             field_list = [field.strip() for field in fields.split(",")]
-            check_fields_valid(field_list, valid_fields, table)
-            if geom_column: 
-                fields = f'{geom_column}, ' + fields
+            check_fields_valid(field_list, schema.valid_fields, table)
+            if schema.geom_column: 
+                fields = f"{schema.geom_column}, " + fields
             fields = "objectid, " + fields
         params = {"select": fields}
         headers = {"prefer": "count=exact"}
@@ -91,7 +87,7 @@ class Databridge(AbstractWorker):
         async with session.get(
             url, params=params, headers=headers, timeout=timeout
         ) as response:
-            return await self.normalize_rv(request, response, table_schema)
+            return await self.normalize_rv(request, response, schema)
 
     async def normalize_rv(
         self,
@@ -106,7 +102,7 @@ class Databridge(AbstractWorker):
         if response.ok:
             geojsons = []
             for record in data["rows"]:
-                geom_column = table_schema._api_geom_column
+                geom_column = table_schema.geom_column
                 if geom_column:
                     geojson = GeoJsonFeature(
                         id=record.pop("objectid"),
@@ -135,22 +131,18 @@ class Databridge(AbstractWorker):
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
-    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema) -> list[dict]: 
+    def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
         """Return a consistent representation of timestamp fields. AGO returns 
         timestamp fields as milliseconds since the epoch
 
         Args:
             records (list[dict]): Data records
-            table_schema (TableSchema): TableSchema
-
-        Returns:
-            list[dict]: Updated records
+            schema (TableSchema): TableSchema
         """        
         for record in records:
             for field in record["properties"]:
-                if field in table_schema._api_timestamp_fields:
+                if field in schema.timestamp_fields:
                     if record["properties"][field]: 
                         record["properties"][field] = dt.datetime.fromtimestamp(
                             record["properties"][field] / 1000
                         )
-        return records

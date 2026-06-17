@@ -10,6 +10,7 @@ from fastapi.exceptions import HTTPException
 
 from ..utils.models import GeoJsonFeature, ReturnJson, TableSchema
 
+NON_USER_API_PARAMS = ("session", "kwargs", "request", "schema")
 
 class AbstractWorker(ABC):
     """Abstract base class to ensure worker classes are properly implemented
@@ -68,7 +69,7 @@ class AbstractWorker(ABC):
         sig = inspect.signature(func)
         available_parameters = []
         for param in sig.parameters:
-            if param not in ("session", "kwargs", "request"):
+            if param not in NON_USER_API_PARAMS:
                 available_parameters.append(param)
         return available_parameters
 

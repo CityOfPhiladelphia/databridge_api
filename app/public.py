@@ -125,6 +125,10 @@ async def get_data(
         token = None
     if table: 
         table = table.lower()
+    if not sql: 
+        schema = schema_cache.retrieve_table_schema(table)
+    else: 
+        schema = None
     params = {
         "table": table,
         "fields": fields,
@@ -137,7 +141,7 @@ async def get_data(
         "timeout": timeout,
         "max_age": max_age,
         "request": request,
-        "schema_cache": schema_cache,
+        "schema": schema,
         "token": token,
     }
     if sql:
