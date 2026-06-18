@@ -189,7 +189,7 @@ Note there may be small differences in data values for the same table between th
 AGO and Carto APIs specifically in geometry and timestamp fields due to those APIs
 internal configurations
 
-**Source code: https://github.com/CityOfPhiladelphia/oit_api_wrapper**
+**Source code: https://github.com/CityOfPhiladelphia/databridge_api**
 
 ### Carto SQL API V3
 Carto solely contains public tables, but they

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="OIT API Data Wrapper",
+    title="Databridge API",
     description=description,
     docs_url=f"{public_prefix}/docs",
 )

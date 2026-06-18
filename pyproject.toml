@@ -1,7 +1,7 @@
 [project]
-name = "oit-api-wrapper"
-version = "0.2.0"
-description = "Add your description here"
+name = "databridge-api"
+version = "0.3.0"
+description = "REST API for Accessing Databridge"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -20,9 +20,9 @@ members = [
 ]
 
 [tool.uv.sources]
-oit-api-wrapper = { workspace = true }
+databridge-api = { workspace = true }
 
 [dependency-groups]
 dev = [
-    "oit-api-wrapper",
+    "databridge-api",
 ]

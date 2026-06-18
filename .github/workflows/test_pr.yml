@@ -36,7 +36,7 @@ jobs:
       # no-cache so we're sure we're getting all changes (such as geopetl changes)
       # NOTE: right now just build and test python 3.12 for prod deployment, but we have 3.11 and 3.13 Dockerfiles too.
       - name: Build docker container
-        run: docker build -t oit_api_wrapper_dev:dev --no-cache .
+        run: docker build -t databridge_api_dev:dev --no-cache .
 
       - name: pytests
         run: >
@@ -45,7 +45,7 @@ jobs:
           -e AGO_USER
           -e AGO_PASSWORD
           -e AGO_URL
-          oit_api_wrapper_dev:dev
+          databridge_api_dev:dev
           pytest
           --maxfail=4
           --tb=short
@@ -71,5 +71,5 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           ECR_REPOSITORY_URL: ${{ secrets.ECR_REPOSITORY_URL }}
         run: |
-          docker tag oit_api_wrapper_dev:dev $ECR_REPOSITORY_URL:dev
+          docker tag databridge_api_dev:dev $ECR_REPOSITORY_URL:dev
           docker push $ECR_REPOSITORY_URL:dev
