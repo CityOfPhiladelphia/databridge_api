@@ -61,8 +61,8 @@ class TableField(BaseModel):
 
 class TableSchema(BaseModel):
     fields: list[TableField]
-    _api_valid_fields: list[str] = []
-    _api_geom_column: str | None = None
-    _api_timestamp_fields: list[str] = []
+    valid_fields: list[str] = []
+    geom_column: str | None = None
+    timestamp_fields: list[str] = []
 
     model_config = ConfigDict(extra="allow")

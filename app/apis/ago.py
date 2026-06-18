@@ -90,20 +90,17 @@ class Ago(AbstractWorker):
         timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
+        schema: TableSchema,
         **kwargs,
     ) -> ReturnJson:
-        schema_cache = kwargs["schema_cache"]
-        table_schema = schema_cache.retrieve_table_schema(table)
-        valid_fields = table_schema._api_valid_fields
-
         url = f"{self.organization_url}{table}{self.query_url}"
         if not where:
             where = "1=1"
         if not fields:
-            fields = ", ".join([field for field in valid_fields])
+            fields = ", ".join([field for field in schema.valid_fields])
         else:
             field_list = [field.strip() for field in fields.split(",")]
-            check_fields_valid(field_list, valid_fields, table)
+            check_fields_valid(field_list, schema.valid_fields, table)
             fields = "objectid, " + fields
         params = {
             "where": where,
@@ -117,10 +114,10 @@ class Ago(AbstractWorker):
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(request, response, table_schema)
+            return await self.normalize_rv(request, response, schema)
 
     async def normalize_rv(
-        self, request: Request, response: aiohttp.ClientResponse, table_schema: TableSchema
+        self, request: Request, response: aiohttp.ClientResponse, schema: TableSchema
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         service_url = self.mask_service_url(request, response)
@@ -130,7 +127,7 @@ class Ago(AbstractWorker):
             data = await response.json()
             if "error" not in data:
                 records = data["features"]
-                self.harmonize_timestamp_fields(records, table_schema)
+                self.harmonize_timestamp_fields(records, schema)
                 gjfc = GeoJsonFeatureCollection(**data)
                 meta.record_count = len(gjfc.features)
                 try:
@@ -162,17 +159,17 @@ class Ago(AbstractWorker):
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
-    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema): 
+    def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
         """Coerce to a consistent representation of timestamp fields. AGO returns 
         timestamp fields as milliseconds since the epoch
 
         Args:
             records (list[dict]): Data records
-            table_schema (TableSchema): TableSchema
+            schema (TableSchema): TableSchema
         """        
         for record in records:
             for field in record["properties"]:
-                if field in table_schema._api_timestamp_fields:
+                if field in schema.timestamp_fields:
                     if record["properties"][field]: 
                         record["properties"][field] = dt.datetime.fromtimestamp(
                             record["properties"][field] / 1000

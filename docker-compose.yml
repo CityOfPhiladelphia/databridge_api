@@ -1,6 +1,6 @@
 services:
-  oit_api_wrapper:
-    container_name: oit_api_wrapper
+  databridge_api:
+    container_name: databridge_api
     build: 
       context: .
     env_file: .env

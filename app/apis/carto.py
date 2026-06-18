@@ -94,29 +94,25 @@ class Carto(AbstractWorker):
         max_age: int,
         session: aiohttp.ClientSession,
         request: Request,
+        schema: TableSchema | None,
         **kwargs,
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
         if not sql:
-            schema_cache = kwargs["schema_cache"]
-            table_schema = schema_cache.retrieve_table_schema(table)
-            geom_column = table_schema._api_geom_column
-            valid_fields = table_schema._api_valid_fields
-
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
-            if geom_column:
+            if schema.geom_column:
                 subq_select += psql.SQL(
                     "ST_Transform({geom_column}, {out_sr}) AS geojson_shape, "
                 ).format(
-                    geom_column=psql.Identifier(geom_column),
+                    geom_column=psql.Identifier(schema.geom_column),
                     out_sr=psql.Literal(out_sr),
                 )
             else:
                 subq_select += psql.SQL("NULL AS geojson_shape, ")
             if fields:
                 field_list = [field.strip() for field in fields.split(",")]
-                check_fields_valid(field_list, valid_fields, table)
+                check_fields_valid(field_list, schema.valid_fields, table)
                 fields_composed = psql.SQL(", ").join(
                     [psql.Identifier(field) for field in field_list]
                 )
@@ -124,7 +120,7 @@ class Carto(AbstractWorker):
                 subq_select += fields_composed
             else:
                 subq_select += psql.SQL(", ").join(
-                    [psql.Identifier(field) for field in valid_fields]
+                    [psql.Identifier(field) for field in schema.valid_fields]
                 )
 
             subq_from = psql.SQL("FROM {table} ").format(table=psql.Identifier(table))
@@ -142,21 +138,21 @@ class Carto(AbstractWorker):
             query = psql.SQL(FULL_QUERY).format(subq=subq)
         else:
             query = psql.SQL(sql)
-            table_schema = None
         params = {"q": query.as_string()}
+
         headers = self.headers
         if max_age:
             headers["cache-control"] = f"max-age={max_age}"
         async with session.get(
             self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
-            return await self.normalize_rv(request, response, table_schema, limit, sql)
+            return await self.normalize_rv(request, response, schema, limit, sql)
 
     async def normalize_rv(
         self,
         request: Request,
         response: aiohttp.ClientResponse,
-        table_schema: TableSchema | None, 
+        schema: TableSchema | None, 
         limit: int,
         sql: str | None,
     ) -> ReturnJson:
@@ -174,7 +170,7 @@ class Carto(AbstractWorker):
         if response.ok:
             if not sql:
                 records = data["rows"][0]["jsonb_build_object"]['features']
-                self.harmonize_timestamp_fields(records, table_schema)
+                self.harmonize_timestamp_fields(records, schema)
                 gjfc = GeoJsonFeatureCollection(
                     type="FeatureCollection", features=records
                 )
@@ -200,17 +196,17 @@ class Carto(AbstractWorker):
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
 
-    def harmonize_timestamp_fields(self, records: list[dict], table_schema: TableSchema):
+    def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema):
         """Coerce to a consistent representation of timestamp fields. Carto returns 
         timestamps in ISO format
 
         Args:
             records (list[dict]): Data records
-            table_schema (TableSchema): TableSchema
+            schema (TableSchema): TableSchema
         """
         for record in records:
             for field in record["properties"]:
-                if field in table_schema._api_timestamp_fields:
+                if field in schema.timestamp_fields:
                     if record["properties"][field]: 
                         record["properties"][field] = dt.datetime.fromisoformat(
                             record["properties"][field]
