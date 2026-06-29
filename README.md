@@ -6,6 +6,15 @@ Read the API docs at `<api_endpoint>/docs`
 The publicly accessible endpoints are actually at the path `/api`, i.e. the standard 
 `GET` request goes to `/api/get`, but this is hidden from the user by the reverse proxy, Mulesoft.
 
+### APIs
+This API interfaces with the following APIs: 
+* PostgREST
+    * This API connects to `databridge-public` and reads PostgreSQL functions unique to each table there
+    * These functions are created via an [Airflow task](https://github.com/CityOfPhiladelphia/airflow-iac-dags/edit/main/lib/databridge_tasks/upload_to_db_public_simple.py)
+* ArcGIS Online
+* CARTO V3
+
+
 ### Debugging
 There is an internal endpoint available for testing. This will only be accessible on the City network, i.e. not by the reverse proxy. 
 
