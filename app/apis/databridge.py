@@ -30,6 +30,9 @@ class Databridge(AbstractWorker):
         **kwargs,
     ) -> ReturnJson:
         url = f'{self.base_url}/{table}'
+        # This will be slow on big tables (15s for 5M rows)
+        # count=estimated not supported for RPC https://github.com/PostgREST/postgrest/issues/3652; 
+        # count=planned returns '*' which is useless
         headers = {"prefer": "count=exact"}
         async with session.head(url, headers=headers, timeout=timeout) as response:
             return await self.normalize_rv_count(request, response)
@@ -80,7 +83,6 @@ class Databridge(AbstractWorker):
         if schema.geom_column: 
             fields = f"{schema.geom_column}, " + fields
         params = {"select": fields}
-        headers = {"prefer": "count=exact"}
 
         if limit: 
             params["limit"] = limit
@@ -88,7 +90,7 @@ class Databridge(AbstractWorker):
             params['out_sr'] = out_sr if out_sr else self.DEFAULT_SRID
 
         async with session.get(
-            url, params=params, headers=headers, timeout=timeout
+            url, params=params, timeout=timeout
         ) as response:
             return await self.normalize_rv(request, response, schema)
 
