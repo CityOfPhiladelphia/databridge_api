@@ -18,7 +18,8 @@ from ..utils.models import (
 class Databridge(AbstractWorker):
     def __init__(self):
         self.name = "Databridge-Public PostgREST API"
-        self.base_url = "https://postgrest-public-dev.citygeo.phila.city/rpc"
+        self.table_url = "https://postgrest-public-dev.citygeo.phila.city" # Used only for counts
+        self.rpc_url = "https://postgrest-public-dev.citygeo.phila.city/rpc" # PostgreSQL Function used because of ST_Trasform and GeoJSON preparation
 
     async def get_count(
         self,
@@ -29,10 +30,7 @@ class Databridge(AbstractWorker):
         request: Request,
         **kwargs,
     ) -> ReturnJson:
-        url = f'{self.base_url}/{table}'
-        # This will be slow on big tables (15s for 5M rows)
-        # count=estimated not supported for RPC https://github.com/PostgREST/postgrest/issues/3652; 
-        # count=planned returns '*' which is useless
+        url = f'{self.table_url}/{table}'
         headers = {"prefer": "count=exact"}
         async with session.head(url, headers=headers, timeout=timeout) as response:
             return await self.normalize_rv_count(request, response)
@@ -71,7 +69,7 @@ class Databridge(AbstractWorker):
         schema: TableSchema, 
         **kwargs,
     ) -> ReturnJson:
-        url = f'{self.base_url}/{table}'
+        url = f'{self.rpc_url}/{table}'
         params = {}
 
         if not fields:
