@@ -76,9 +76,9 @@ class Databridge(AbstractWorker):
         else:
             field_list = [field.strip() for field in fields.split(",")]
             check_fields_valid(field_list, schema.valid_fields, table)
-            if schema.geom_column: 
-                fields = f"{schema.geom_column}, " + fields
             fields = "objectid, " + fields
+        if schema.geom_column: 
+            fields = f"{schema.geom_column}, " + fields
         params = {"select": fields}
         headers = {"prefer": "count=exact"}
 
