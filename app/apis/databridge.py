@@ -82,7 +82,7 @@ class Databridge(AbstractWorker):
             fields = "objectid, " + fields
         if schema.geom_column: 
             fields = f"{schema.geom_column}, " + fields
-        params = {"select": fields}
+        params = {"select": fields, "order": "objectid"}
 
         if limit: 
             params["limit"] = limit
