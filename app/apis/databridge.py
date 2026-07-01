@@ -18,7 +18,7 @@ from ..utils.models import (
 class Databridge(AbstractWorker):
     def __init__(self):
         self.name = "Databridge-Public PostgREST API"
-        self.base_url = "https://postgrest-public-dev.citygeo.phila.city"
+        self.base_url = "https://postgrest-public-dev.citygeo.phila.city/rpc"
 
     async def get_count(
         self,
@@ -84,6 +84,9 @@ class Databridge(AbstractWorker):
 
         if limit: 
             params["limit"] = limit
+        if schema.geom_column: 
+            params['out_sr'] = out_sr if out_sr else self.DEFAULT_SRID
+
         async with session.get(
             url, params=params, headers=headers, timeout=timeout
         ) as response:
@@ -97,12 +100,11 @@ class Databridge(AbstractWorker):
     ) -> ReturnJson:
         links = Links(self=str(request.url))
         meta = Meta(service=self.name, service_url=str(response.url))
-        # Now how we gonna transform this to geojson? Should we make database views for that instead?
-        data = await response.json()
         if response.ok:
+            data = await response.json()
+            geom_column = table_schema.geom_column
             geojsons = []
-            for record in data["rows"]:
-                geom_column = table_schema.geom_column
+            for record in data:
                 if geom_column:
                     geojson = GeoJsonFeature(
                         id=record.pop("objectid"),
@@ -123,10 +125,11 @@ class Databridge(AbstractWorker):
             rv = ReturnJson(data=gjfc, links=links, meta=meta)
             return rv
         else:
+            text = await response.text()
             error = Error(
                 code=response.status,
                 title=f"{self.name} Error",
-                detail=data["error"],
+                detail=text,
             )
             rv = ReturnJson(errors=[error], links=links, meta=meta)
             return rv
