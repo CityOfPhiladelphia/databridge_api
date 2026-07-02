@@ -81,3 +81,16 @@ jobs:
       run: |
         docker tag databridge_api:latest $ECR_REPOSITORY_URL:latest
         docker push $ECR_REPOSITORY_URL:latest
+        
+  # Triggers Renovate to run on just the citygeo-variety-apps github repo
+  # This will create pull requests to update the cluster to the newest
+  # version of your code
+  trigger_renovate:
+    # Wait until the build is complete, so that the Docker
+    # images are pushed to ECR before Renovate runs
+    needs: [build]
+    uses: CityOfPhiladelphia/citygeo-shared-workflows/.github/workflows/trigger_renovate.yaml@main
+    with:
+      target_repo: "CityOfPhiladelphia/citygeo-variety-apps"
+    secrets: inherit
+
