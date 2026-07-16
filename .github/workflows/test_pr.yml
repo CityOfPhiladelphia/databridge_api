@@ -11,6 +11,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  api_catalog:
+    name: API Catalog
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      - name: Generate OpenAPI Spec
+        run: |
+          # Using the script or CLI approach
+          cd app
+          python -c "import json; from main import app; print(json.dumps(app.openapi()))" > openapi.json
   build:
     name: build-test
     if: "!contains(github.event.head_commit.message, 'skip ci')"
@@ -22,20 +35,6 @@ jobs:
       # IMPORTANT NOTE: pinned to v3 instead of master, because v4 uses node20 and glibc 2.27. Amazon linux 2 atm only supports
       # glibc 2.26. Change notes: https://github.com/marketplace/actions/checkout
       - uses: actions/checkout@v3
-
-      # Retrieve the OpenAPI Schema
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-
-      - name: Generate OpenAPI Spec
-        run: |
-          # Using the script or CLI approach
-          cd app
-          python -c "import json; from main import app; print(json.dumps(app.openapi()))" > openapi.json
 
       # Copy private databridge-schemas repo for use in the container (just so pytests work, in prod it will get the gh repo from a sidecar)
       - name: Checkout Databridge Schemas
