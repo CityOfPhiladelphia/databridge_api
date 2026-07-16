@@ -28,8 +28,6 @@ jobs:
 
       - name: Generate OpenAPI Spec
         run: |
-          # Using the script or CLI approach
-          cd app
           uv run extract_openapi.py
   build:
     name: build-test
