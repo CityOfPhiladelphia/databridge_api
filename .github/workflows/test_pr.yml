@@ -29,7 +29,8 @@ jobs:
 
       - name: Move databridge schemas
         run: |
-          mkdir /scripts
+          sudo mkdir -p /scripts
+          sudo chown -R runner:docker /scripts
           mv databridge-schemas /scripts/
           ls /scripts
 
