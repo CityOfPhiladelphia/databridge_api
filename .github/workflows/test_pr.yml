@@ -45,6 +45,11 @@ jobs:
       - name: Generate OpenAPI Spec
         run: |
           uv run extract_openapi.py
+        env:
+          CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
+          AGO_USER: ${{ secrets.AGO_USER }}
+          AGO_PASSWORD: ${{ secrets.AGO_PASSWORD }}
+          AGO_URL: ${{ secrets.AGO_URL }}
   build:
     name: build-test
     if: "!contains(github.event.head_commit.message, 'skip ci')"
