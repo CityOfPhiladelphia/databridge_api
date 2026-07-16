@@ -27,6 +27,12 @@ jobs:
           path: ./databridge-schemas # Places it in the build context
           ref: main
 
+      - name: Move databridge schemas
+        run: |
+          mkdir /scripts
+          mv databridge-schemas /scripts/
+          ls /scripts
+
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
