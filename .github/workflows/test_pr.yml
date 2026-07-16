@@ -18,6 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      # Copy private databridge-schemas repo for use in the container (just so pytests work, in prod it will get the gh repo from a sidecar)
+      - name: Checkout Databridge Schemas
+        uses: actions/checkout@v4
+        with:
+          repository: CityOfPhiladelphia/databridge-schemas
+          ssh-key: ${{ secrets.DB_SCHEMAS_DEPLOY_KEY }}
+          path: ./databridge-schemas # Places it in the build context
+          ref: main
+
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
