@@ -45,6 +45,8 @@ jobs:
       - name: Generate OpenAPI Spec
         run: |
           uv run extract_openapi.py
+          ls
+          cat openapi.json
         env:
           CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
           AGO_USER: ${{ secrets.AGO_USER }}
