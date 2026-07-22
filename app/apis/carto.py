@@ -42,7 +42,6 @@ class Carto(AbstractWorker):
         max_age: int,
         session: aiohttp.ClientSession,
         request: Request,
-        **kwargs,
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
@@ -99,6 +98,9 @@ class Carto(AbstractWorker):
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
+        if count_only:
+            return await self.get_count(table, where, timeout, max_age, session, request)
+
         if not sql:
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
             if schema.geom_column:
@@ -111,7 +113,7 @@ class Carto(AbstractWorker):
             else:
                 subq_select += psql.SQL("NULL AS geojson_shape, ")
             if fields:
-                field_list = [field.strip() for field in fields.split(",")]
+                field_list = [field for field in fields.split(",")]
                 check_fields_valid(field_list, schema.valid_fields, table)
                 fields_composed = psql.SQL(", ").join(
                     [psql.Identifier(field) for field in field_list]

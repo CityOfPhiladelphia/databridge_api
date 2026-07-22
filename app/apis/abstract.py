@@ -124,7 +124,7 @@ def check_fields_valid(field_list: list[str], valid_fields: list[str], table: st
         HTTPException: If a non-existent field was requested
     """
     for field in field_list:
-        if field not in valid_fields:
+        if field.lower().strip() not in valid_fields:
             raise HTTPException(
                 status_code=400,
                 headers={"title": "Bad Request"},

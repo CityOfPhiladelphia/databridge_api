@@ -84,7 +84,7 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
         assert rv["meta"]["record_count"] > 0, f"Service {service} found zero features in table {table}"
 
 
-@pytest.mark.parametrize("service", ["carto"])
+@pytest.mark.parametrize("service", ["carto", "databridge"])
 def test_valid_private_no_interfere(client: TestClient, service: str, token: str):
     """Test that a private token doesn't interfere with other APIs"""
     table = GOOD_TABLES[0]
@@ -258,9 +258,10 @@ def test_valid_srid(client: TestClient, service: str):
     assert rv2["data"]["features"], f'Service {service} found zero features in table {table}'
 
 
-@pytest.mark.parametrize("service", ["carto"])
+@pytest.mark.parametrize("service", ["ago", "carto", "databridge"])
 def test_valid_sql(client: TestClient, service: str):
-    """Test that the `sql` parameter works, only on Carto"""
+    """Test that the `sql` parameter works for Carto & Databridge and that it 
+    fails correctly for AGO"""
     table = GOOD_TABLES[0]
     params = {
         "table": "ANSTHES",  # Should have no effect
@@ -271,18 +272,26 @@ def test_valid_sql(client: TestClient, service: str):
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
-    assert response.status_code == 200
-    rv = response.json()
-    assert rv["meta"]["record_count"] == 5
-    assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    if service == 'ago':
+        assert response.status_code >= 400 and response.status_code < 500
+        return None
+    else: 
+        assert response.status_code == 200
+        rv = response.json()
+        assert rv["meta"]["record_count"] == 5
+        assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+        assert "next" not in rv["links"].keys()
 
 
 @pytest.mark.parametrize("service", ["carto"])
-def test_valid_sql_too_large(client: TestClient, service: str):
+def test_valid_sql_too_large_for_carto(client: TestClient, service: str):
     """Test that the `sql` parameter works will error if the response from Carto
-    is too large to handle but smaller than a timeout"""
+    is too large to handle but smaller than a timeout. This test
+    should only run on Carto which has no inherent limits to response data size.
+    PostgREST server has a configured limit of 1000 records"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
+        "service": service,
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
@@ -456,11 +465,40 @@ def test_invalid_sql(client: TestClient, service: str):
     assert "errors" in data
 
 
-@pytest.mark.parametrize("service", ["None"])
-def test_invalid_sql_large_payload(client: TestClient, service: None):
-    """Test that the API fails if too large of a dataset is requsted"""
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_sql_ddl_insert(client: TestClient, service: str):
+    """Test that the APIs fail if DDL (INSERT/UPDATE) statements are passed"""
+    params = {
+        "sql": "INSERT INTO PPD_COMPLAINTS (objectid) VALUES (0)",
+        "service": service,
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    assert response.status_code >= 400 and response.status_code <= 500
+    data = response.json()
+    assert "errors" in data
+
+
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_sql_ddl_update(client: TestClient, service: str):
+    """Test that the APIs fail if DDL (INSERT/UPDATE) statements are passed"""
+    params = {
+        "sql": "UPDATE PPD_COMPLAINTS SET objectid = 0",
+        "service": service,
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    assert response.status_code >= 400 and response.status_code <= 500
+    data = response.json()
+    assert "errors" in data
+
+
+@pytest.mark.parametrize("service", ["Carto"])
+def test_invalid_sql_too_large_for_carto(client: TestClient, service: None):
+    """Test that the API fails if too large of a dataset is requsted. This test 
+    should only run on Carto which has no inherent limits to response data size. 
+    PostgREST server has a configured limit of 1000 records"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
+        "service": service,
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)

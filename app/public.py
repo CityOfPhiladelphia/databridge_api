@@ -123,9 +123,14 @@ async def get_data(
         token = request.headers["authorization"]
     else:
         token = None
-    if table: 
+    if not table and not sql:
+        raise HTTPException(
+            status_code=400,
+            detail="'table' or 'sql' parameters are required",
+            headers={"title": "Bad Request"},
+        )
+    if table and not sql: 
         table = table.lower()
-    if not sql: 
         schema = schema_cache.retrieve_table_schema(table)
     else: 
         schema = None
@@ -144,71 +149,38 @@ async def get_data(
         "schema": schema,
         "token": token,
     }
-    if sql:
-        if service and service.lower() != "carto":
-            raise HTTPException(
-                status_code=400,
-                detail="SQL parameter can only be used with `service=carto`",
-                headers={"title": "Bad Request"},
-            )
-        try:
-            rv = await api_manager.map_str_to_api["carto"].get(**params)
-        except TimeoutError:
-            raise HTTPException(
-                status_code=408,
-                detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
-                headers={"title": "Request Timeout"},
-            )
-        return generate_final_response(rv)
     if not service:
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
         for api in api_manager.map_api_to_params:
-            if table:
-                try:
-                    rv = await api.get(**params)
-                except TimeoutError:
-                    api_manager.deprioritize(api)
-                    error = Error(
-                        code=408,
-                        title=f"{api.name} Timeout Error",
-                        detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
-                    )
-                    rv_combined.errors.append(error)
-                else:
-                    if not rv.errors:
-                        rv.meta.service_available_query_parameters = (
-                            api_manager.map_api_to_params[api]
-                        )
-                        return rv
-                    else:
-                        rv_combined.errors.append(rv.errors[0])
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="'table' or 'sql' parameters are required",
-                    headers={"title": "Bad Request"},
+            try:
+                rv = await api.get(**params)
+            except TimeoutError:
+                api_manager.deprioritize(api)
+                error = Error(
+                    code=408,
+                    title=f"{api.name} Timeout Error",
+                    detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
                 )
+                rv_combined.errors.append(error)
+            else:
+                if not rv.errors:
+                    rv.meta.service_available_query_parameters = (
+                        api_manager.map_api_to_params[api]
+                    )
+                    return rv
+                else:
+                    rv_combined.errors.append(rv.errors[0])
         return generate_final_response(rv_combined)
     else:
         api = api_manager.map_str_to_api[service.lower()]
-        if table:
-            try:
-                if count_only:
-                    rv = await api.get_count(**params)
-                else:
-                    rv = await api.get(**params)
-            except TimeoutError:
-                raise HTTPException(
-                    status_code=408,
-                    detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again",
-                    headers={"title": "Request Timeout"},
-                )
-        else:
+        try:
+            rv = await api.get(**params)
+        except TimeoutError:
             raise HTTPException(
-                status_code=400,
-                detail="'table' or 'sql' parameters are required",
-                headers={"title": "Bad Request"},
+                status_code=408,
+                detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again",
+                headers={"title": "Request Timeout"},
             )
         rv.meta.service_available_query_parameters = api_manager.map_api_to_params[api]
         return generate_final_response(rv)
