@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import datetime as dt
 
 import pytest
 from fastapi.testclient import TestClient
@@ -44,6 +45,23 @@ def token() -> str:
 # Valid Parameter Tests #
 ################################################################################
 
+@pytest.mark.parametrize("table", GOOD_TABLES)
+def test_individual_schemas(client: TestClient, table: str):
+    """Test that the `/schemas` pathway works as intended and the necessary tables are found"""
+    response = client.get("/schemas", params={"table": table})
+    assert response.status_code == 200
+    data = response.json()
+    assert table in data['schema']
+
+
+def test_all_schemas(client: TestClient):
+    """Test that the `/schemas` pathway works as intended"""
+    response = client.get("/schemas")
+    assert response.status_code == 200
+    data = response.json()
+    for table in GOOD_TABLES: 
+        assert table in data['schemas']
+
 
 @pytest.mark.parametrize("table", GOOD_TABLES)
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -84,7 +102,7 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
         assert rv["meta"]["record_count"] > 0, f"Service {service} found zero features in table {table}"
 
 
-@pytest.mark.parametrize("service", ["carto"])
+@pytest.mark.parametrize("service", ["carto", "databridge"])
 def test_valid_private_no_interfere(client: TestClient, service: str, token: str):
     """Test that a private token doesn't interfere with other APIs"""
     table = GOOD_TABLES[0]
@@ -117,17 +135,12 @@ def test_valid_fields(client: TestClient, service: str):
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
     
 
-@pytest.mark.skip("""Skipping this test because if user does not request the "objectid" 
-field and this API doesn't include it, then AGO will not provide feature IDs. 
-I'm making the design decision to include an extra field in the user response 
-rather than not providing the "id" column. Either way, AGO (and thus this API) 
-violates the JSON:API spec.""")
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_valid_fields2(client: TestClient, service: str):
     params = {
         "table": GOOD_TABLES[0],
         "limit": 2,
-        "fields": "addr_std",
+        "fields": "document_id,document_type,display_date",
         "service": service,
         "max_age": 0,
     }
@@ -158,7 +171,7 @@ def test_valid_where(client: TestClient, service: str):
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
-def test_valid_where_parethesization(client: TestClient, service: str):
+def test_valid_where_parenthesization(client: TestClient, service: str):
     """Test that the `where` clause given by the next url and joined with an SQL
     AND doesn't decouple any existing WHERE clause, i.e. because SQL `AND` binds
     more tightly than `OR`"""
@@ -258,9 +271,10 @@ def test_valid_srid(client: TestClient, service: str):
     assert rv2["data"]["features"], f'Service {service} found zero features in table {table}'
 
 
-@pytest.mark.parametrize("service", ["carto"])
+@pytest.mark.parametrize("service", ["ago", "carto", "databridge"])
 def test_valid_sql(client: TestClient, service: str):
-    """Test that the `sql` parameter works, only on Carto"""
+    """Test that the `sql` parameter works for Carto & Databridge and that it 
+    fails correctly for AGO"""
     table = GOOD_TABLES[0]
     params = {
         "table": "ANSTHES",  # Should have no effect
@@ -271,18 +285,26 @@ def test_valid_sql(client: TestClient, service: str):
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
-    assert response.status_code == 200
-    rv = response.json()
-    assert rv["meta"]["record_count"] == 5
-    assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    if service == 'ago':
+        assert response.status_code >= 400 and response.status_code < 500
+        return None
+    else: 
+        assert response.status_code == 200
+        rv = response.json()
+        assert rv["meta"]["record_count"] == 5
+        assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+        assert "next" not in rv["links"].keys()
 
 
 @pytest.mark.parametrize("service", ["carto"])
-def test_valid_sql_too_large(client: TestClient, service: str):
+def test_valid_sql_too_large_for_carto(client: TestClient, service: str):
     """Test that the `sql` parameter works will error if the response from Carto
-    is too large to handle but smaller than a timeout"""
+    is too large to handle but smaller than a timeout. This test
+    should only run on Carto which has no inherent limits to response data size.
+    PostgREST server has a configured limit of 1000 records"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
+        "service": service,
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
@@ -311,6 +333,35 @@ def test_valid_timeout(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 408
+
+
+def test_valid_harmonized_timestamps(client: TestClient):
+    """Test that the data returned from the downstream APIs has the same ISO-8601 
+    formatted timestamp values"""
+    timestamp_dict = {
+        "display_date": None,
+        "receipt_date": None,
+        "recording_date": None,
+        "document_date": None,
+    }
+    for service in api_manager.map_str_to_api.keys(): 
+        params = {
+            "table": GOOD_TABLES[0],
+            "fields": ",".join(timestamp_dict.keys()),
+            "service": service,
+            "max_age": 0,
+            "limit": 1
+        }
+        response = client.get(f"{public_prefix}/get", params=params)
+        assert response.status_code == 200
+        data = response.json()
+        for field, value in data['data']['features'][0]['properties'].items(): 
+            if field in timestamp_dict.keys() and value: 
+                assert dt.datetime.fromisoformat(value)
+                if timestamp_dict[field]: 
+                    assert timestamp_dict[field] == value
+                else: 
+                    timestamp_dict[field] = value
 
 
 @pytest.mark.skip("""Skipping this test because these tables have differences 
@@ -456,11 +507,40 @@ def test_invalid_sql(client: TestClient, service: str):
     assert "errors" in data
 
 
-@pytest.mark.parametrize("service", ["None"])
-def test_invalid_sql_large_payload(client: TestClient, service: None):
-    """Test that the API fails if too large of a dataset is requsted"""
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_sql_ddl_insert(client: TestClient, service: str):
+    """Test that the APIs fail if DDL (INSERT/UPDATE) statements are passed"""
+    params = {
+        "sql": "INSERT INTO PPD_COMPLAINTS (objectid) VALUES (0)",
+        "service": service,
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    assert response.status_code >= 400 and response.status_code <= 500
+    data = response.json()
+    assert "errors" in data
+
+
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_sql_ddl_update(client: TestClient, service: str):
+    """Test that the APIs fail if DDL (INSERT/UPDATE) statements are passed"""
+    params = {
+        "sql": "UPDATE PPD_COMPLAINTS SET objectid = 0",
+        "service": service,
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    assert response.status_code >= 400 and response.status_code <= 500
+    data = response.json()
+    assert "errors" in data
+
+
+@pytest.mark.parametrize("service", ["Carto"])
+def test_invalid_sql_too_large_for_carto(client: TestClient, service: None):
+    """Test that the API fails if too large of a dataset is requsted. This test 
+    should only run on Carto which has no inherent limits to response data size. 
+    PostgREST server has a configured limit of 1000 records"""
     params = {
         "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
+        "service": service,
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)

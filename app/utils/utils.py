@@ -178,7 +178,7 @@ class SchemaCache:
 
 
 description = """
-This wrapper API retrieves data from ArcGIS Online (AGO) and Carto SQL API V3 (Carto) following
+This wrapper API retrieves data from Databridge-Public database, ArcGIS Online (AGO), and Carto SQL API V3 (Carto) following
 the below specifications:
 1. [JSON:API](https://jsonapi.org/) for API response,
 1. [GeoJSON](https://datatracker.ietf.org/doc/html/rfc7946) for returned data, and
@@ -186,10 +186,13 @@ the below specifications:
 
 
 Note there may be small differences in data values for the same table between the
-AGO and Carto APIs specifically in geometry and timestamp fields due to those APIs
+APIs specifically in geometry and timestamp fields due to those APIs
 internal configurations
 
 **Source code: https://github.com/CityOfPhiladelphia/databridge_api**
+
+### Databridge-Public
+The Databridge-Public contains public tables only; it is configured with a PostgREST server. 
 
 ### Carto SQL API V3
 Carto solely contains public tables, but they
@@ -263,10 +266,10 @@ class Api_Manager:
     def __init__(self):
         """Note this method must be updated if any new APIs are added"""
         self.map_str_to_api: dict[str, AbstractWorker] = {
+            "databridge": Databridge(),
             "ago": Ago(),
             "carto": Carto(),
-            # "databridge": Databridge(),
-        }  # This is the initial order searched if no API is specified, and is the query param the user must submit
+        }  # This is the initial priority order searched if no API is specified, and is the query param the user must submit
         self.map_api_to_params: dict[AbstractWorker, list[str]] = {}
         self.api_priority_queue: list[AbstractWorker] = []
         self.populate_initial_values()

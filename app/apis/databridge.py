@@ -1,8 +1,6 @@
 import aiohttp
-import os
 import datetime as dt
 from fastapi import Request
-from psycopg import sql as psql  # Redefine to allow "sql" as a query parameter
 from .abstract import AbstractWorker, check_fields_valid
 from ..utils.models import (
     ReturnJson,
@@ -18,7 +16,10 @@ from ..utils.models import (
 class Databridge(AbstractWorker):
     def __init__(self):
         self.name = "Databridge-Public PostgREST API"
-        self.base_url = "https://postgrest-public-dev.citygeo.phila.city"
+        self.table_url = "https://postgrest-public-dev.citygeo.phila.city" # Used only for counts
+        self.rpc_url = "https://postgrest-public-dev.citygeo.phila.city/rpc" # PostgreSQL Function used because of ST_Trasform and GeoJSON preparation
+        self.sql_to_postgrest_url = "https://dev-sql-to-postgrest-api.citygeo.phila.city/convert"
+        self.max_records = 1000
 
     async def get_count(
         self,
@@ -26,31 +27,37 @@ class Databridge(AbstractWorker):
         where: str | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request,
-        **kwargs,
+        return_json: ReturnJson
     ) -> ReturnJson:
-        url = f'{self.base_url}/{table}'
+        generated_sql = self.generate_sql(
+            table, fields=None, where=where, limit=None, schema=None, count_only=True
+        )
+        translator_rv = await self.get_postgrest_url(
+            generated_sql, session, timeout, return_json
+        )
+        if isinstance(translator_rv, ReturnJson):
+            return translator_rv
+        elif isinstance(translator_rv, str):
+            postgrest_url = translator_rv
+
+        url = f"{self.table_url}{postgrest_url}"
         headers = {"prefer": "count=exact"}
         async with session.head(url, headers=headers, timeout=timeout) as response:
-            return await self.normalize_rv_count(request, response)
+            return await self.normalize_rv_count(response, return_json)
 
     async def normalize_rv_count(
-        self, request: Request, response: aiohttp.ClientResponse
+        self,
+        response: aiohttp.ClientResponse,
+        return_json: ReturnJson,
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
-        meta = Meta(service=self.name, service_url=str(response.url))
+        return_json.meta.service_url = str(response.url)
         if response.ok:
-            meta.records_total = response.headers.get("Content-Range").split("/")[1]
-            rv = ReturnJson(links=links, meta=meta)
-            return rv
+            return_json.meta.records_total = response.headers.get("Content-Range").split("/")[1]
+            return return_json
         else:
-            error = Error(
-                code=response.status,
-                title=f"{self.name} Error",
-                detail=response.reason,
-            )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            error = Error(code=response.status)
+            return_json.errors = [error]
+            return return_json
 
     # Do not remove any unused parameters as they are crucial to the documentation
     async def get(
@@ -68,81 +75,164 @@ class Databridge(AbstractWorker):
         schema: TableSchema, 
         **kwargs,
     ) -> ReturnJson:
-        url = f'{self.base_url}/{table}'
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name)
+        return_json = ReturnJson(links=links, meta=meta)
+
+        if count_only:
+            return await self.get_count(table, where, timeout, session, return_json)
+        
         params = {}
-
-        if not fields:
-            fields = ", ".join([field for field in schema.valid_fields])
-        else:
-            field_list = [field.strip() for field in fields.split(",")]
-            check_fields_valid(field_list, schema.valid_fields, table)
+        if not sql: 
+            if limit is None:
+                limit = self.max_records
+            else:
+                limit = min(limit, self.max_records)
+            generated_sql = self.generate_sql(table, fields, where, limit, schema, count_only=False)
             if schema.geom_column: 
-                fields = f"{schema.geom_column}, " + fields
-            fields = "objectid, " + fields
-        params = {"select": fields}
-        headers = {"prefer": "count=exact"}
+                params['out_sr'] = out_sr if out_sr else self.DEFAULT_SRID
+        else: 
+            generated_sql = sql
+        translator_rv = await self.get_postgrest_url(
+            generated_sql, session, timeout, return_json
+        )
+        if isinstance(translator_rv, ReturnJson): 
+            return translator_rv
+        elif isinstance(translator_rv, str): 
+            postgrest_url = translator_rv
+        if fields: 
+            field_list = [field for field in fields.split(",")]
+        else: 
+            field_list = None
 
-        if limit: 
-            params["limit"] = limit
-        async with session.get(
-            url, params=params, headers=headers, timeout=timeout
-        ) as response:
-            return await self.normalize_rv(request, response, schema)
+        url = f'{self.rpc_url}{postgrest_url}'
+        async with session.get(url, params=params, timeout=timeout) as response:
+            return await self.normalize_rv(
+                request, response, schema, sql, limit, return_json, field_list
+            )
 
     async def normalize_rv(
         self,
         request: Request,
         response: aiohttp.ClientResponse,
-        table_schema: TableSchema | None,
+        schema: TableSchema | None,
+        sql: str | None,
+        limit: int,
+        return_json: ReturnJson,
+        field_list: list[str] | None,
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
-        meta = Meta(service=self.name, service_url=str(response.url))
-        # Now how we gonna transform this to geojson? Should we make database views for that instead?
+        return_json.meta.service_url = str(response.url)
         data = await response.json()
         if response.ok:
             geojsons = []
-            for record in data["rows"]:
-                geom_column = table_schema.geom_column
-                if geom_column:
-                    geojson = GeoJsonFeature(
-                        id=record.pop("objectid"),
-                        properties=record,
-                        geometry=record.pop(geom_column),
-                    )
-                else: 
-                    geojson = GeoJsonFeature(
-                        id=record.pop("objectid"),
-                        properties=record,
-                    )
+            for record in data: 
+                objectid = record["objectid"]
+                if schema and schema.geom_column:
+                    geometry = record.pop(schema.geom_column)
+                else:
+                    geometry = None
+                if field_list: # Remove any fields not requested by the user, especially objectid. 
+                    new_record = {}
+                    for field, value in record.items():
+                        if field in field_list:
+                            new_record[field] = value
+                else:
+                    new_record = record
+                geojson = GeoJsonFeature(
+                    id=objectid,
+                    properties=new_record,
+                    geometry=geometry,
+                )
                 geojsons.append(geojson)
             gjfc = GeoJsonFeatureCollection(features=geojsons)
 
-            meta.record_count = len(gjfc.features)
-            next_url = self.create_next_url(gjfc.features, request)
-            links.next = next_url
-            rv = ReturnJson(data=gjfc, links=links, meta=meta)
-            return rv
+            return_json.meta.record_count = len(gjfc.features)
+            if not sql and return_json.meta.record_count == limit:
+                next_url = self.create_next_url(gjfc.features, request)
+                return_json.links.next = next_url
+            return_json.data = gjfc
+            return return_json
         else:
             error = Error(
                 code=response.status,
-                title=f"{self.name} Error",
-                detail=data["error"],
+                title=f"{self.name} Error {data['code']}",
+                detail=f'{data['details']} {data['message']}',
             )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            return_json.errors = [error]
+            return return_json
 
     def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
-        """Return a consistent representation of timestamp fields. AGO returns 
-        timestamp fields as milliseconds since the epoch
+        """PostgREST returns ISO-8601 automatically"""        
+        pass
+
+    async def get_postgrest_url(
+        self,
+        generated_sql: str | None,
+        session: aiohttp.ClientSession,
+        timeout: float,
+        return_json: ReturnJson
+    ) -> str | ReturnJson: 
+        """Call the SQL-to-PostgREST translator API for the given SQL. If any 
+        error is encountered, create a JSON API response and return that instead
 
         Args:
-            records (list[dict]): Data records
-            schema (TableSchema): TableSchema
+            generated_sql (str | None): SQL
+            request (Request): The request to this API
+            session (aiohttp.ClientSession): Session to make requests with
+            timeout (float): Timeout in seconds
+
+        Returns:
+            str | ReturnJson: If str, the URL for accessing PostgREST. If a ReturnJson, 
+                then an error was encountered
         """        
-        for record in records:
-            for field in record["properties"]:
-                if field in schema.timestamp_fields:
-                    if record["properties"][field]: 
-                        record["properties"][field] = dt.datetime.fromtimestamp(
-                            record["properties"][field] / 1000
-                        )
+        async with session.get(
+            self.sql_to_postgrest_url, params={'sql': generated_sql}, timeout=timeout
+        ) as response:
+            data = await response.json()
+            if response.ok:
+                return data['path']
+            else:
+                error = Error(
+                    code=response.status,
+                    title=f"{self.name} Error",
+                    detail=data["error"],
+                )
+                return_json.errors = [error]
+                return return_json
+
+    def generate_sql(
+        self,
+        table: str,
+        fields: str | None,
+        where: str | None,
+        limit: int | None,
+        schema: TableSchema,
+        count_only: bool,
+    ) -> str: 
+        """Generate the correct SQL syntax to send to the SQL-to-PostgREST translator
+        from user submitted query parameters. 
+        Ensure that the SQL contains the objectid and geometry columns. This 
+        function only accommodates SELECT, FROM, WHERE, LIMIT, and ORDER BY operators.
+        """        
+        stmt = "SELECT "
+        if count_only: 
+            stmt += "* "
+        else: 
+            if not fields:
+                fields = ", ".join([field for field in schema.valid_fields])
+            else:
+                field_list = [field for field in fields.split(",")]
+                check_fields_valid(field_list, schema.valid_fields, table)
+                fields = "objectid, " + fields
+            if schema.geom_column: 
+                fields = f"{schema.geom_column}, " + fields
+            stmt += f"{fields} "
+        stmt += f"FROM {table} "
+        if where: 
+            stmt += f"WHERE {where} "
+        if not count_only: 
+            stmt += "ORDER BY objectid "
+            stmt += f"LIMIT {limit} "
+
+        return stmt
+    

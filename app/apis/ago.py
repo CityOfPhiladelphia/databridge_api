@@ -11,7 +11,7 @@ from ..utils.models import (
     ReturnJson,
     TableSchema,
 )
-from .abstract import AbstractWorker, check_fields_valid
+from .abstract import AbstractWorker, check_fields_valid, remove_extra_fields
 
 
 class Ago(AbstractWorker):
@@ -29,6 +29,7 @@ class Ago(AbstractWorker):
         timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
+        return_json: ReturnJson,
         **kwargs,
     ) -> ReturnJson:
         url = f"{self.organization_url}{table}{self.query_url}"
@@ -42,21 +43,22 @@ class Ago(AbstractWorker):
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv_count(request, response)
+            return await self.normalize_rv_count(request, response, return_json)
 
     async def normalize_rv_count(
-        self, request: Request, response: aiohttp.ClientResponse
+        self,
+        request: Request,
+        response: aiohttp.ClientResponse,
+        return_json: ReturnJson,
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
         service_url = self.mask_service_url(request, response)
-        meta = Meta(service=self.name, service_url=service_url)
+        return_json.meta.service_url = service_url
         # AGO REST API doesn't respect HTTP status codes
         if response.ok:
             data = await response.json()
             if "error" not in data:
-                meta.records_total = data["properties"]["count"]
-                rv = ReturnJson(links=links, meta=meta)
-                return rv
+                return_json.meta.records_total = data["properties"]["count"]
+                return return_json
             else:
                 title = f"{self.name} Error"
                 if data["error"]["message"]:
@@ -66,8 +68,8 @@ class Ago(AbstractWorker):
                     title=title,
                     detail=data["error"]["details"][0],
                 )
-                rv = ReturnJson(errors=[error], links=links, meta=meta)
-                return rv
+                return_json.errors = [error]
+                return return_json
         else:
             error_detail = await response.text()
             error = Error(
@@ -75,8 +77,8 @@ class Ago(AbstractWorker):
                 title=f"{self.name} Error",
                 detail=error_detail,
             )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            return_json.errors = [error]
+            return return_json
 
     # Do not remove any unused parameters as they are crucial to the documentation
     async def get(
@@ -93,18 +95,36 @@ class Ago(AbstractWorker):
         schema: TableSchema,
         **kwargs,
     ) -> ReturnJson:
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name)
+        return_json = ReturnJson(links=links, meta=meta)
+
+        if kwargs['sql']: 
+            error = Error(
+                code=400,
+                title='Bad Request',
+                detail=f"'sql' query parameter is invalid for {self.name} service",
+            )
+            return_json.errors = [error]
+            return return_json
+        if count_only:
+            return await self.get_count(
+                table, where, timeout, session, request, return_json, **kwargs
+            )
+
         url = f"{self.organization_url}{table}{self.query_url}"
+        if fields:
+            field_list = [field for field in fields.split(",")]
+            check_fields_valid(field_list, schema.valid_fields, table)
+            fields_needed = "objectid, " + fields
+        else:
+            field_list = None
+            fields_needed = ", ".join([field for field in schema.valid_fields])
         if not where:
             where = "1=1"
-        if not fields:
-            fields = ", ".join([field for field in schema.valid_fields])
-        else:
-            field_list = [field.strip() for field in fields.split(",")]
-            check_fields_valid(field_list, schema.valid_fields, table)
-            fields = "objectid, " + fields
         params = {
             "where": where,
-            "outFields": fields,
+            "outFields": fields_needed,
             "outSR": out_sr,
             "orderByFields": "objectid",
             "f": "geojson",
@@ -114,30 +134,36 @@ class Ago(AbstractWorker):
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(request, response, schema)
+            return await self.normalize_rv(request, response, schema, return_json, field_list)
 
     async def normalize_rv(
-        self, request: Request, response: aiohttp.ClientResponse, schema: TableSchema
+        self,
+        request: Request,
+        response: aiohttp.ClientResponse,
+        schema: TableSchema,
+        return_json: ReturnJson,
+        field_list: list[str] | None
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
         service_url = self.mask_service_url(request, response)
-        meta = Meta(service=self.name, service_url=service_url)
+        return_json.meta.service_url = service_url
         # AGO REST API doesn't respect HTTP status codes
         if response.ok:
             data = await response.json()
             if "error" not in data:
                 records = data["features"]
                 self.harmonize_timestamp_fields(records, schema)
+                if field_list: 
+                    remove_extra_fields(records, field_list)
                 gjfc = GeoJsonFeatureCollection(**data)
-                meta.record_count = len(gjfc.features)
+                return_json.meta.record_count = len(gjfc.features)
                 try:
                     data["properties"]["exceededTransferLimit"]
                     next_url = self.create_next_url(gjfc.features, request)
-                    links.next = next_url
+                    return_json.links.next = next_url
                 except KeyError:
                     pass
-                rv = ReturnJson(data=gjfc, links=links, meta=meta)
-                return rv
+                return_json.data = gjfc
+                return return_json
             else:
                 title = f"{self.name} Error"
                 if data["error"]["message"]:
@@ -147,8 +173,8 @@ class Ago(AbstractWorker):
                     title=title,
                     detail=data["error"]["details"][0],
                 )
-                rv = ReturnJson(errors=[error], links=links, meta=meta)
-                return rv
+                return_json.errors = [error]
+                return return_json
         else:
             error_detail = await response.text()
             error = Error(
@@ -156,8 +182,8 @@ class Ago(AbstractWorker):
                 title=f"{self.name} Error",
                 detail=error_detail,
             )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            return_json.errors = [error]
+            return return_json
 
     def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
         """Coerce to a consistent representation of timestamp fields. AGO returns 
