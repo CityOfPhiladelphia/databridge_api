@@ -11,6 +11,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  api_catalog:
+    name: API Catalog
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # Copy private databridge-schemas repo for use in the container (just so pytests work, in prod it will get the gh repo from a sidecar)
+      - name: Checkout Databridge Schemas
+        uses: actions/checkout@v4
+        with:
+          repository: CityOfPhiladelphia/databridge-schemas
+          ssh-key: ${{ secrets.DB_SCHEMAS_DEPLOY_KEY }}
+          path: ./databridge-schemas # Places it in the build context
+          ref: main
+
+      - name: Move databridge schemas
+        run: |
+          sudo mkdir -p /scripts
+          sudo chown -R runner:docker /scripts
+          mv databridge-schemas /scripts/
+          ls /scripts
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      - name: UV Pip Install
+        run: |
+          uv venv
+          uv pip install .
+
+      - name: Generate OpenAPI Spec
+        run: |
+          uv run extract_openapi.py
+          ls
+          cat openapi.json
+        env:
+          CARTO_TOKEN: ${{ secrets.CARTO_TOKEN }}
+          AGO_USER: ${{ secrets.AGO_USER }}
+          AGO_PASSWORD: ${{ secrets.AGO_PASSWORD }}
+          AGO_URL: ${{ secrets.AGO_URL }}
   build:
     name: build-test
     if: "!contains(github.event.head_commit.message, 'skip ci')"
