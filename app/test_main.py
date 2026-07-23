@@ -45,6 +45,23 @@ def token() -> str:
 # Valid Parameter Tests #
 ################################################################################
 
+@pytest.mark.parametrize("table", GOOD_TABLES)
+def test_individual_schemas(client: TestClient, table: str):
+    """Test that the `/schemas` pathway works as intended and the necessary tables are found"""
+    response = client.get("/schemas", params={"table": table})
+    assert response.status_code == 200
+    data = response.json()
+    assert table in data['schema']
+
+
+def test_all_schemas(client: TestClient):
+    """Test that the `/schemas` pathway works as intended"""
+    response = client.get("/schemas")
+    assert response.status_code == 200
+    data = response.json()
+    for table in GOOD_TABLES: 
+        assert table in data['schemas']
+
 
 @pytest.mark.parametrize("table", GOOD_TABLES)
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
