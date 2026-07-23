@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import datetime as dt
 
 import pytest
 from fastapi.testclient import TestClient
@@ -117,17 +118,12 @@ def test_valid_fields(client: TestClient, service: str):
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
     
 
-@pytest.mark.skip("""Skipping this test because if user does not request the "objectid" 
-field and this API doesn't include it, then AGO will not provide feature IDs. 
-I'm making the design decision to include an extra field in the user response 
-rather than not providing the "id" column. Either way, AGO (and thus this API) 
-violates the JSON:API spec.""")
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_valid_fields2(client: TestClient, service: str):
     params = {
         "table": GOOD_TABLES[0],
         "limit": 2,
-        "fields": "addr_std",
+        "fields": "document_id,document_type,display_date",
         "service": service,
         "max_age": 0,
     }
@@ -158,7 +154,7 @@ def test_valid_where(client: TestClient, service: str):
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
-def test_valid_where_parethesization(client: TestClient, service: str):
+def test_valid_where_parenthesization(client: TestClient, service: str):
     """Test that the `where` clause given by the next url and joined with an SQL
     AND doesn't decouple any existing WHERE clause, i.e. because SQL `AND` binds
     more tightly than `OR`"""
@@ -320,6 +316,35 @@ def test_valid_timeout(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 408
+
+
+def test_valid_harmonized_timestamps(client: TestClient):
+    """Test that the data returned from the downstream APIs has the same ISO-8601 
+    formatted timestamp values"""
+    timestamp_dict = {
+        "display_date": None,
+        "receipt_date": None,
+        "recording_date": None,
+        "document_date": None,
+    }
+    for service in api_manager.map_str_to_api.keys(): 
+        params = {
+            "table": GOOD_TABLES[0],
+            "fields": ",".join(timestamp_dict.keys()),
+            "service": service,
+            "max_age": 0,
+            "limit": 1
+        }
+        response = client.get(f"{public_prefix}/get", params=params)
+        assert response.status_code == 200
+        data = response.json()
+        for field, value in data['data']['features'][0]['properties'].items(): 
+            if field in timestamp_dict.keys() and value: 
+                assert dt.datetime.fromisoformat(value)
+                if timestamp_dict[field]: 
+                    assert timestamp_dict[field] == value
+                else: 
+                    timestamp_dict[field] = value
 
 
 @pytest.mark.skip("""Skipping this test because these tables have differences 

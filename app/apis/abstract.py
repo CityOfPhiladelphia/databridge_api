@@ -130,3 +130,22 @@ def check_fields_valid(field_list: list[str], valid_fields: list[str], table: st
                 headers={"title": "Bad Request"},
                 detail=f"Invalid field requested from table '{table}': '{field}'",
             )
+
+
+def remove_extra_fields(records: list[dict], field_list: list[dict]): 
+    """Remove any fields not requested by the user that remain in the downstream
+    API response data. This is particularly the case for the objectid field which
+    must be requested from AGO even if the user does not specify it so that each
+    record has its identifier. Modifies the list of records in place.
+
+    Args:
+        records (list[dict]): Data returned from downstream APIs
+        field_list (list[dict]): List of fields requested by user
+    """    
+    for record in records: 
+        old_properties = record['properties']
+        new_properties = {}
+        for field, value in old_properties.items(): 
+            if field in field_list: 
+                new_properties[field] = value
+        record['properties'] = new_properties

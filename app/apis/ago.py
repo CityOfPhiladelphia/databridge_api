@@ -11,7 +11,7 @@ from ..utils.models import (
     ReturnJson,
     TableSchema,
 )
-from .abstract import AbstractWorker, check_fields_valid
+from .abstract import AbstractWorker, check_fields_valid, remove_extra_fields
 
 
 class Ago(AbstractWorker):
@@ -113,17 +113,18 @@ class Ago(AbstractWorker):
             )
 
         url = f"{self.organization_url}{table}{self.query_url}"
-        if not where:
-            where = "1=1"
-        if not fields:
-            fields = ", ".join([field for field in schema.valid_fields])
-        else:
+        if fields:
             field_list = [field for field in fields.split(",")]
             check_fields_valid(field_list, schema.valid_fields, table)
-            fields = "objectid, " + fields
+            fields_needed = "objectid, " + fields
+        else:
+            field_list = None
+            fields_needed = ", ".join([field for field in schema.valid_fields])
+        if not where:
+            where = "1=1"
         params = {
             "where": where,
-            "outFields": fields,
+            "outFields": fields_needed,
             "outSR": out_sr,
             "orderByFields": "objectid",
             "f": "geojson",
@@ -133,7 +134,7 @@ class Ago(AbstractWorker):
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(request, response, schema, return_json)
+            return await self.normalize_rv(request, response, schema, return_json, field_list)
 
     async def normalize_rv(
         self,
@@ -141,6 +142,7 @@ class Ago(AbstractWorker):
         response: aiohttp.ClientResponse,
         schema: TableSchema,
         return_json: ReturnJson,
+        field_list: list[str] | None
     ) -> ReturnJson:
         service_url = self.mask_service_url(request, response)
         return_json.meta.service_url = service_url
@@ -150,6 +152,8 @@ class Ago(AbstractWorker):
             if "error" not in data:
                 records = data["features"]
                 self.harmonize_timestamp_fields(records, schema)
+                if field_list: 
+                    remove_extra_fields(records, field_list)
                 gjfc = GeoJsonFeatureCollection(**data)
                 return_json.meta.record_count = len(gjfc.features)
                 try:

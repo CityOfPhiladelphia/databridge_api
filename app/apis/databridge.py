@@ -27,7 +27,6 @@ class Databridge(AbstractWorker):
         where: str | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request,
         return_json: ReturnJson
     ) -> ReturnJson:
         generated_sql = self.generate_sql(
@@ -81,9 +80,7 @@ class Databridge(AbstractWorker):
         return_json = ReturnJson(links=links, meta=meta)
 
         if count_only:
-            return await self.get_count(
-                table, where, timeout, session, request, return_json
-            )
+            return await self.get_count(table, where, timeout, session, return_json)
         
         params = {}
         if not sql: 
@@ -103,11 +100,15 @@ class Databridge(AbstractWorker):
             return translator_rv
         elif isinstance(translator_rv, str): 
             postgrest_url = translator_rv
+        if fields: 
+            field_list = [field for field in fields.split(",")]
+        else: 
+            field_list = None
 
         url = f'{self.rpc_url}{postgrest_url}'
         async with session.get(url, params=params, timeout=timeout) as response:
             return await self.normalize_rv(
-                request, response, schema, sql, limit, return_json
+                request, response, schema, sql, limit, return_json, field_list
             )
 
     async def normalize_rv(
@@ -117,24 +118,31 @@ class Databridge(AbstractWorker):
         schema: TableSchema | None,
         sql: str | None,
         limit: int,
-        return_json: ReturnJson
+        return_json: ReturnJson,
+        field_list: list[str] | None,
     ) -> ReturnJson:
         return_json.meta.service_url = str(response.url)
         data = await response.json()
         if response.ok:
             geojsons = []
-            for record in data:
+            for record in data: 
+                objectid = record["objectid"]
                 if schema and schema.geom_column:
-                    geojson = GeoJsonFeature(
-                        id=record["objectid"],
-                        properties=record,
-                        geometry=record.pop(schema.geom_column),
-                    )
-                else: 
-                    geojson = GeoJsonFeature(
-                        id=record["objectid"],
-                        properties=record,
-                    )
+                    geometry = record.pop(schema.geom_column)
+                else:
+                    geometry = None
+                if field_list: # Remove any fields not requested by the user, especially objectid. 
+                    new_record = {}
+                    for field, value in record.items():
+                        if field in field_list:
+                            new_record[field] = value
+                else:
+                    new_record = record
+                geojson = GeoJsonFeature(
+                    id=objectid,
+                    properties=new_record,
+                    geometry=geometry,
+                )
                 geojsons.append(geojson)
             gjfc = GeoJsonFeatureCollection(features=geojsons)
 
@@ -154,20 +162,8 @@ class Databridge(AbstractWorker):
             return return_json
 
     def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
-        """Return a consistent representation of timestamp fields. AGO returns 
-        timestamp fields as milliseconds since the epoch
-
-        Args:
-            records (list[dict]): Data records
-            schema (TableSchema): TableSchema
-        """        
-        for record in records:
-            for field in record["properties"]:
-                if field in schema.timestamp_fields:
-                    if record["properties"][field]: 
-                        record["properties"][field] = dt.datetime.fromtimestamp(
-                            record["properties"][field] / 1000
-                        )
+        """PostgREST returns ISO-8601 automatically"""        
+        pass
 
     async def get_postgrest_url(
         self,
