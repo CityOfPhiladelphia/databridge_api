@@ -1,5 +1,5 @@
-from collections.abc import Generator
 import datetime as dt
+from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -293,7 +293,7 @@ def test_valid_sql(client: TestClient, service: str):
         rv = response.json()
         assert rv["meta"]["record_count"] == 5
         assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
-        assert "next" not in rv["links"].keys()
+        assert "next" not in rv["links"]
 
 
 @pytest.mark.parametrize("service", ["carto"])
@@ -344,7 +344,7 @@ def test_valid_harmonized_timestamps(client: TestClient):
         "recording_date": None,
         "document_date": None,
     }
-    for service in api_manager.map_str_to_api.keys(): 
+    for service in api_manager.map_str_to_api: 
         params = {
             "table": GOOD_TABLES[0],
             "fields": ",".join(timestamp_dict.keys()),
@@ -356,7 +356,7 @@ def test_valid_harmonized_timestamps(client: TestClient):
         assert response.status_code == 200
         data = response.json()
         for field, value in data['data']['features'][0]['properties'].items(): 
-            if field in timestamp_dict.keys() and value: 
+            if field in timestamp_dict and value: 
                 assert dt.datetime.fromisoformat(value)
                 if timestamp_dict[field]: 
                     assert timestamp_dict[field] == value
@@ -389,14 +389,14 @@ def compare_dicts(
     d1, d2, output: dict, prefix=""
 ):
     for key in d1:
-        if key not in d2.keys():
+        if key not in d2:
             output["d1_only"].append({f"d1.{prefix}{key}": d1[key]})
         elif d1[key] != d2[key]:
             output["different"].append(
                 {f"d1.{prefix}{key}": d1[key], f"d2.{prefix}{key}": d2[key]}
             )
     for key in d2:
-        if key not in d1.keys():
+        if key not in d1:
             output["d2_only"].append({f"d2.{prefix}{key}": d1[key]})
     return output
 

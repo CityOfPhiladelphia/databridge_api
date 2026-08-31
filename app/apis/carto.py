@@ -208,8 +208,7 @@ class Carto(AbstractWorker):
         """
         for record in records:
             for field in record["properties"]:
-                if field in schema.timestamp_fields:
-                    if record["properties"][field]: 
-                        record["properties"][field] = dt.datetime.fromisoformat(
-                            record["properties"][field]
-                        )
+                if field in schema.timestamp_fields and record["properties"][field]: 
+                    record["properties"][field] = dt.datetime.fromisoformat(
+                        record["properties"][field]
+                    )

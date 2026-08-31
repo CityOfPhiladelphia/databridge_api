@@ -1,24 +1,36 @@
+import os
+
 import aiohttp
-import datetime as dt
 from fastapi import Request
-from .abstract import AbstractWorker, check_fields_valid
+from validators import url as valid_url
+
 from ..utils.models import (
-    ReturnJson,
-    Meta,
-    Links,
     Error,
-    GeoJsonFeatureCollection,
     GeoJsonFeature,
+    GeoJsonFeatureCollection,
+    Links,
+    Meta,
+    ReturnJson,
     TableSchema,
 )
+from .abstract import AbstractWorker, check_fields_valid
 
 
 class Databridge(AbstractWorker):
     def __init__(self):
         self.name = "Databridge-Public PostgREST API"
-        self.table_url = "https://postgrest-public-dev.citygeo.phila.city" # Used only for counts
-        self.rpc_url = "https://postgrest-public-dev.citygeo.phila.city/rpc" # PostgreSQL Function used because of ST_Trasform and GeoJSON preparation
-        self.sql_to_postgrest_url = "https://dev-sql-to-postgrest-api.citygeo.phila.city/convert"
+        self.db_url = os.environ.get(
+            "POSTGREST_DB_URL",
+            default="https://postgrest-public-dev.citygeo.phila.city",
+        )  # Used only for counts
+        self.rpc_url = f'{self.db_url}/rpc'  # PostgreSQL Function used because of ST_Trasform and GeoJSON preparation
+        self.sql_to_postgrest_url = os.environ.get(
+            "POSTGREST_SQL_URL",
+            default="https://dev-sql-to-postgrest-api.citygeo.phila.city/convert",
+        )
+        assert valid_url(self.db_url), f'Invalid Databridge db_url: "{self.db_url}"'
+        assert valid_url(self.rpc_url), f'Invalid Databridge rpc_url: "{self.rpc_url}"'
+        assert valid_url(self.sql_to_postgrest_url), f'Invalid Databridge sql_to_postgrest_url: "{self.sql_to_postgrest_url}"'
         self.max_records = 1000
 
     async def get_count(
@@ -40,7 +52,7 @@ class Databridge(AbstractWorker):
         elif isinstance(translator_rv, str):
             postgrest_url = translator_rv
 
-        url = f"{self.table_url}{postgrest_url}"
+        url = f"{self.db_url}{postgrest_url}"
         headers = {"prefer": "count=exact"}
         async with session.head(url, headers=headers, timeout=timeout) as response:
             return await self.normalize_rv_count(response, return_json)
@@ -161,9 +173,8 @@ class Databridge(AbstractWorker):
             return_json.errors = [error]
             return return_json
 
-    def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
+    def harmonize_timestamp_fields(self): 
         """PostgREST returns ISO-8601 automatically"""        
-        pass
 
     async def get_postgrest_url(
         self,
