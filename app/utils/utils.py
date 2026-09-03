@@ -3,8 +3,10 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import tomllib
 from asyncio import sleep
 from enum import Enum
+from pathlib import Path
 
 import aiohttp
 from fastapi.exceptions import HTTPException
@@ -175,6 +177,21 @@ class SchemaCache:
                 headers={"title": "Not Found"},
                 detail=f"Schema not found for table '{table}'",
             )
+
+
+def retrieve_api_version() -> str: 
+    """Retrieve the version of this API from the pyprject.toml file
+
+    Returns:
+        str: API version
+    """    
+    file_path = Path.cwd() / 'pyproject.toml'
+    assert file_path.is_file()
+    with open(file_path, mode='rb') as f: 
+        toml = tomllib.load(f)
+        version = toml['project']['version']
+
+    return version 
 
 
 description = """

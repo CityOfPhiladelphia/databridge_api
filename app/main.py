@@ -6,10 +6,11 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .internal import internal_router
-from .public import public_router, public_prefix
+from .public import public_prefix, public_router
 from .utils.models import Error, Links, ReturnJson
 from .utils.utils import (
     description,
+    retrieve_api_version,
     schema_cache,
     session_manager,
 )
@@ -49,11 +50,13 @@ async def lifespan(app: FastAPI):
     await session_manager.stop()
 
 
+app_version = retrieve_api_version()
 app = FastAPI(
     lifespan=lifespan,
     title="Databridge API",
     description=description,
     docs_url=f"{public_prefix}/docs",
+    version = app_version
 )
 app.include_router(internal_router)
 app.include_router(public_router)
