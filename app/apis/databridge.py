@@ -129,7 +129,7 @@ class Databridge(AbstractWorker):
         response: aiohttp.ClientResponse,
         schema: TableSchema | None,
         sql: str | None,
-        limit: int,
+        limit: int | None,
         return_json: ReturnJson,
         field_list: list[str] | None,
     ) -> ReturnJson:
@@ -137,6 +137,9 @@ class Databridge(AbstractWorker):
         data = await response.json()
         if response.ok:
             geojsons = []
+            record_count = len(data)
+            if sql and record_count >= self.max_records: 
+                return self.raise_content_too_large(return_json)
             for record in data: 
                 objectid = record["objectid"]
                 if schema and schema.geom_column:
@@ -158,7 +161,7 @@ class Databridge(AbstractWorker):
                 geojsons.append(geojson)
             gjfc = GeoJsonFeatureCollection(features=geojsons)
 
-            return_json.meta.record_count = len(gjfc.features)
+            return_json.meta.record_count = record_count
             if not sql and return_json.meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)
                 return_json.links.next = next_url

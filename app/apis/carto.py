@@ -41,7 +41,7 @@ class Carto(AbstractWorker):
         timeout: float,
         max_age: int,
         session: aiohttp.ClientSession,
-        request: Request,
+        return_json: ReturnJson
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
@@ -58,26 +58,23 @@ class Carto(AbstractWorker):
         async with session.get(
             self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
-            return await self.normalize_rv_count(request, response)
+            return await self.normalize_rv_count(response, return_json)
 
     async def normalize_rv_count(
-        self, request: Request, response: aiohttp.ClientResponse
+        self, response: aiohttp.ClientResponse, return_json: ReturnJson
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
-        meta = Meta(service=self.name, service_url=str(response.url))
         data = await response.json()
         if response.ok:
-            meta.records_total = data["rows"][0]["count"]
-            rv = ReturnJson(links=links, meta=meta)
-            return rv
+            return_json.meta.records_total = data["rows"][0]["count"]
+            return return_json
         else:
             error = Error(
                 code=response.status,
                 title=f"{self.name} Error",
                 detail=data["error"],
             )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            return_json.errors = [error]
+            return return_json
 
     # Do not remove any unused parameters as they are crucial to the documentation
     async def get(
@@ -98,8 +95,14 @@ class Carto(AbstractWorker):
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
+        links = Links(self=str(request.url))
+        meta = Meta(service=self.name)
+        return_json = ReturnJson(links=links, meta=meta)
+    
         if count_only:
-            return await self.get_count(table, where, timeout, max_age, session, request)
+            return await self.get_count(
+                table, where, timeout, max_age, session, return_json
+            )
 
         if not sql:
             subq_select = psql.SQL("SELECT objectid AS geojson_id, ")
@@ -148,7 +151,9 @@ class Carto(AbstractWorker):
         async with session.get(
             self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
-            return await self.normalize_rv(request, response, schema, limit, sql)
+            return await self.normalize_rv(
+                request, response, schema, limit, sql, return_json
+            )
 
     async def normalize_rv(
         self,
@@ -157,21 +162,27 @@ class Carto(AbstractWorker):
         schema: TableSchema | None, 
         limit: int,
         sql: str | None,
+        return_json: ReturnJson
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
-        meta = Meta(service=self.name, service_url=str(response.url))
         if int(response.headers["Content-Length"]) >= self.MAX_RESPONSE_SIZE:
             error = Error(
                 code="413",
                 title="Content Too Large",
-                detail="Request less data, preferably 2,000 rows or fewer.",
+                detail=f"Request fewer than {self.max_records:,} rows.",
             )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            return_json.errors = [error]
+            return return_json
         data = await response.json()
         if response.ok:
             if not sql:
                 records = data["rows"][0]["jsonb_build_object"]['features']
+            else: 
+                records = data['rows']
+            record_count = len(records)
+            if sql and record_count >= self.max_records: 
+                return self.raise_content_too_large(return_json)
+
+            if not sql:
                 self.harmonize_timestamp_fields(records, schema)
                 gjfc = GeoJsonFeatureCollection(
                     type="FeatureCollection", features=records
@@ -183,20 +194,20 @@ class Carto(AbstractWorker):
                     geojsons.append(geojson)
                 gjfc = GeoJsonFeatureCollection(features=geojsons)
 
-            meta.record_count = len(gjfc.features)
-            if not sql and meta.record_count == limit:
+            return_json.meta.record_count = record_count
+            if not sql and return_json.meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)
-                links.next = next_url
-            rv = ReturnJson(data=gjfc, links=links, meta=meta)
-            return rv
+                return_json.links.next = next_url
+            return_json.data=gjfc
+            return return_json
         else:
             error = Error(
                 code=response.status,
                 title=f"{self.name} Error",
                 detail=data["error"],
             )
-            rv = ReturnJson(errors=[error], links=links, meta=meta)
-            return rv
+            return_json.errors=[error]
+            return return_json
 
     def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema):
         """Coerce to a consistent representation of timestamp fields. Carto returns 

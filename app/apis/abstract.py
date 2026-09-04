@@ -8,7 +8,7 @@ from collections.abc import Callable
 from fastapi import Request
 from fastapi.exceptions import HTTPException
 
-from ..utils.models import GeoJsonFeature, ReturnJson, TableSchema
+from ..utils.models import Error, GeoJsonFeature, ReturnJson, TableSchema
 
 NON_USER_API_PARAMS = ("session", "kwargs", "request", "schema")
 
@@ -21,6 +21,7 @@ class AbstractWorker(ABC):
         1 * 1024 * 1024
     )  # 1MB response limit to not crash user systems (1MB of data is expanding to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
     DEFAULT_SRID = 4326
+    max_records = 1000
 
     @abstractmethod
     async def get_count(self) -> ReturnJson:
@@ -110,6 +111,24 @@ class AbstractWorker(ABC):
             new_where = next_where
         next_url = str(old_url.include_query_params(where=new_where))
         return next_url
+
+    def raise_content_too_large(self, return_json: ReturnJson) -> ReturnJson: 
+        """Raise HTTP 413 Content Too Large error for any API that requests, using 
+        the API's max_records value
+
+        Args:
+            return_json (ReturnJson): Return JSON object
+
+        Returns:
+            ReturnJson: Return JSON object with attached error
+        """        
+        error = Error(
+            code="413",
+            title="Content Too Large",
+            detail=f"Request fewer than {self.max_records:,} rows.",
+        )
+        return_json.errors = [error]
+        return return_json
 
 
 def check_fields_valid(field_list: list[str], valid_fields: list[str], table: str):

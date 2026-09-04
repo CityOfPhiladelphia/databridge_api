@@ -296,14 +296,12 @@ def test_valid_sql(client: TestClient, service: str):
         assert "next" not in rv["links"]
 
 
-@pytest.mark.parametrize("service", ["carto"])
+@pytest.mark.parametrize("service", ["carto", "databridge"])
 def test_valid_sql_too_large_for_carto(client: TestClient, service: str):
-    """Test that the `sql` parameter works will error if the response from Carto
-    is too large to handle but smaller than a timeout. This test
-    should only run on Carto which has no inherent limits to response data size.
-    PostgREST server has a configured limit of 1000 records"""
+    """Test that the `sql` parameter works will error if the amount of data requested
+    is too large to handle but smaller than a timeout"""
     params = {
-        "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
+        "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 1001",
         "service": service,
         "max_age": 0,
     }
@@ -529,22 +527,6 @@ def test_invalid_sql_ddl_update(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
-    data = response.json()
-    assert "errors" in data
-
-
-@pytest.mark.parametrize("service", ["Carto"])
-def test_invalid_sql_too_large_for_carto(client: TestClient, service: None):
-    """Test that the API fails if too large of a dataset is requsted. This test 
-    should only run on Carto which has no inherent limits to response data size. 
-    PostgREST server has a configured limit of 1000 records"""
-    params = {
-        "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
-        "service": service,
-        "max_age": 0,
-    }
-    response = client.get(f"{public_prefix}/get", params=params)
-    assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
 
