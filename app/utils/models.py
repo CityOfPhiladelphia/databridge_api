@@ -31,7 +31,7 @@ class Error(BaseModel):
 
 class Links(BaseModel, validate_assignment=True): 
     """JSON:API spec for returning URLs"""
-    self: HttpUrl
+    self: HttpUrl = None
     next: HttpUrl = None
 
 

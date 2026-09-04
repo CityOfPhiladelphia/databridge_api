@@ -1,4 +1,6 @@
+import datetime as dt
 import os
+import time
 
 import aiohttp
 from fastapi import Request
@@ -83,11 +85,15 @@ class Databridge(AbstractWorker):
         sql: str | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request,
+        request: Request | None,
         schema: TableSchema, 
+        record_latency: bool = False, 
         **kwargs,
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
+        if request: 
+            links = Links(self=str(request.url))
+        else: 
+            links = Links()
         meta = Meta(service=self.name)
         return_json = ReturnJson(links=links, meta=meta)
 
@@ -118,14 +124,22 @@ class Databridge(AbstractWorker):
             field_list = None
 
         url = f'{self.rpc_url}{postgrest_url}'
+        if record_latency: 
+            start_time = time.perf_counter()
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(
+            rv = await self.normalize_rv(
                 request, response, schema, sql, limit, return_json, field_list
             )
+            if record_latency: 
+                elapsed_time = time.perf_counter() - start_time
+                self.latency = elapsed_time
+                now = dt.datetime.now(dt.UTC)
+                print(f'API: {self.name} - Latency: {self.latency} - Measured at: {now}')
+            return rv
 
     async def normalize_rv(
         self,
-        request: Request,
+        request: Request | None,
         response: aiohttp.ClientResponse,
         schema: TableSchema | None,
         sql: str | None,
@@ -162,7 +176,7 @@ class Databridge(AbstractWorker):
             gjfc = GeoJsonFeatureCollection(features=geojsons)
 
             return_json.meta.record_count = record_count
-            if not sql and return_json.meta.record_count == limit:
+            if request and not sql and return_json.meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)
                 return_json.links.next = next_url
             return_json.data = gjfc

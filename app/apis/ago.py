@@ -1,4 +1,5 @@
 import datetime as dt
+import time
 
 import aiohttp
 from fastapi import Request
@@ -75,11 +76,15 @@ class Ago(AbstractWorker):
         out_sr: int | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request,
-        schema: TableSchema,
+        request: Request | None, # None when it's not the user making the request but the Latency Checker
+        schema: TableSchema, 
+        record_latency: bool = False, 
         **kwargs,
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
+        if request: 
+            links = Links(self=str(request.url))
+        else: 
+            links = Links()
         meta = Meta(service=self.name)
         return_json = ReturnJson(links=links, meta=meta)
 
@@ -117,12 +122,20 @@ class Ago(AbstractWorker):
             params["resultRecordCount"] = limit
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
+        if record_latency: 
+            start_time = time.perf_counter()
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(request, response, schema, return_json, field_list)
+            rv = await self.normalize_rv(request, response, schema, return_json, field_list)
+            if record_latency: 
+                elapsed_time = time.perf_counter() - start_time
+                self.latency = elapsed_time
+                now = dt.datetime.now(dt.UTC)
+                print(f'API: {self.name} - Latency: {self.latency} - Measured at: {now}')
+            return rv
 
     async def normalize_rv(
         self,
-        request: Request,
+        request: Request | None,
         response: aiohttp.ClientResponse,
         schema: TableSchema,
         return_json: ReturnJson,
@@ -142,10 +155,12 @@ class Ago(AbstractWorker):
                 return_json.meta.record_count = len(gjfc.features)
                 try:
                     data["properties"]["exceededTransferLimit"]
-                    next_url = self.create_next_url(gjfc.features, request)
-                    return_json.links.next = next_url
                 except KeyError:
                     pass
+                else: 
+                    if request: 
+                        next_url = self.create_next_url(gjfc.features, request)
+                        return_json.links.next = next_url
                 return_json.data = gjfc
                 return return_json
             else:
@@ -169,7 +184,7 @@ class Ago(AbstractWorker):
                     )
 
     def mask_service_url(
-        self, request: Request, response: aiohttp.ClientResponse
+        self, request: Request | None, response: aiohttp.ClientResponse
     ) -> str:
         """Mask a Bearer authorization token in the service_url for safe logging
 
@@ -178,10 +193,10 @@ class Ago(AbstractWorker):
             response (aiohttp.ClientResponse): Downstream API service response
 
         Returns:
-            str: Safely-masked service url
+            str | None: Safely-masked service url
         """
         service_url = str(response.url)
-        if "authorization" in request.headers:
+        if request and "authorization" in request.headers:
             auth = request.headers["authorization"]
             token = auth.removeprefix("Bearer ")
             service_url = service_url.replace(token, "********")

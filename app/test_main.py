@@ -416,6 +416,7 @@ def test_invalid_nothing(client: TestClient, service: None):
     data = response.json()
     assert "errors" in data
 
+
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_invalid_nothing2(client: TestClient, service: str):
     """Test that the API fails if no `sql` or `table` parameters passed"""

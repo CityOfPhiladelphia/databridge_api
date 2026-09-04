@@ -1,5 +1,6 @@
 import datetime as dt
 import os
+import time
 
 import aiohttp
 from fastapi import Request
@@ -89,13 +90,17 @@ class Carto(AbstractWorker):
         timeout: float,
         max_age: int,
         session: aiohttp.ClientSession,
-        request: Request,
+        request: Request | None,
         schema: TableSchema | None,
+        record_latency: bool = False, 
         **kwargs,
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
-        links = Links(self=str(request.url))
+        if request: 
+            links = Links(self=str(request.url))
+        else: 
+            links = Links()
         meta = Meta(service=self.name)
         return_json = ReturnJson(links=links, meta=meta)
     
@@ -148,12 +153,21 @@ class Carto(AbstractWorker):
         headers = self.headers
         if max_age:
             headers["cache-control"] = f"max-age={max_age}"
+        if record_latency: 
+            start_time = time.perf_counter()
         async with session.get(
             self.base_url, params=params, headers=headers, timeout=timeout
         ) as response:
-            return await self.normalize_rv(
+            rv = await self.normalize_rv(
                 request, response, schema, limit, sql, return_json
             )
+            if record_latency: 
+                elapsed_time = time.perf_counter() - start_time
+                self.latency = elapsed_time
+                now = dt.datetime.now(dt.UTC)
+                print(f'API: {self.name} - Latency: {self.latency} - Measured at: {now}')
+            return rv
+
 
     async def normalize_rv(
         self,
@@ -195,7 +209,7 @@ class Carto(AbstractWorker):
                 gjfc = GeoJsonFeatureCollection(features=geojsons)
 
             return_json.meta.record_count = record_count
-            if not sql and return_json.meta.record_count == limit:
+            if request and not sql and return_json.meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)
                 return_json.links.next = next_url
             return_json.data=gjfc

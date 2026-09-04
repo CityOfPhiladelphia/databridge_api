@@ -96,7 +96,7 @@ class SchemaCache:
         self.cache = replacement_cache
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
-    def search_recursively(self, path: str, replacement_cache={}):
+    def search_recursively(self, path: str, replacement_cache: dict | None = None):
         """Recursively search the local copy of the databridge-schemas repository
         for .json files representing table schemas. This function searches for files
         recursively by calling _itself_ recursively.
@@ -104,6 +104,8 @@ class SchemaCache:
         Args:
             path (str): Filepath for table's schema
         """
+        if replacement_cache is None: 
+            replacement_cache = {}
         for file in os.listdir(path):
             new_path = os.path.join(path, file)
             if os.path.isfile(new_path) and new_path.endswith(".json"):
@@ -310,6 +312,26 @@ class Api_Manager:
         self.api_priority_queue.pop(index)
         self.api_priority_queue.append(api)
 
+    async def determine_latency(self): 
+        for _, api in self.map_str_to_api.items(): 
+            params = {
+                "table": "rtt_summary",
+                "fields": None,
+                "where": None,
+                "limit": 1,
+                "count_only": False,
+                "out_sr": AbstractWorker.DEFAULT_SRID,
+                "sql": None,
+                "session": session_manager(),
+                "timeout": 5,
+                "max_age": 0,
+                "request": None,
+                "schema": schema_cache.retrieve_table_schema("rtt_summary"),
+                "token": None,
+                "record_latency": True,
+            }
+            rv = await api.get(**params)
+            pass
 
 def make_param_api_descriptions(api_manager: Api_Manager, param: str) -> str:
     """Create the description line noting for each query parameter which APIs accept it

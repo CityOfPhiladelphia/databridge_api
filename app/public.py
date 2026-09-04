@@ -113,7 +113,7 @@ async def get_data(
             le=31536000,
         ),
     ] = 31536000,
-    session: aiohttp.ClientSession = Depends(session_manager),
+    session: aiohttp.ClientSession = Depends(session_manager), # Same session for all user requests
 ) -> ReturnJson | JSONResponse:
     """Use this endpoint to retrieve data from the available
     services. At a minimum either the `table` or `sql` parameter is required.

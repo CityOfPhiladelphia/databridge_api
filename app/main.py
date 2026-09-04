@@ -9,6 +9,7 @@ from .internal import internal_router
 from .public import public_prefix, public_router
 from .utils.models import Error, Links, ReturnJson
 from .utils.utils import (
+    api_manager,
     description,
     retrieve_api_version,
     schema_cache,
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
     schema_cache.check_latest_commit()
     commit_check_task = create_task(schema_cache.loop_commit_check())
     await session_manager.start()
+    await api_manager.determine_latency()
     assert schema_cache.cache
     yield
     commit_check_task.cancel()
