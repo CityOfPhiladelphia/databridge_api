@@ -1,4 +1,3 @@
-import datetime as dt
 import os
 import time
 
@@ -89,7 +88,7 @@ class Databridge(AbstractWorker):
         schema: TableSchema, 
         record_latency: bool = False, 
         **kwargs,
-    ) -> ReturnJson:
+    ) -> ReturnJson | None:
         if request: 
             links = Links(self=str(request.url))
         else: 
@@ -131,11 +130,9 @@ class Databridge(AbstractWorker):
                 request, response, schema, sql, limit, return_json, field_list
             )
             if record_latency: 
-                elapsed_time = time.perf_counter() - start_time
-                self.latency = elapsed_time
-                now = dt.datetime.now(dt.UTC)
-                print(f'API: {self.name} - Latency: {self.latency} - Measured at: {now}')
-            return rv
+                self.record_latency(rv, start_time)
+            else: 
+                return rv
 
     async def normalize_rv(
         self,

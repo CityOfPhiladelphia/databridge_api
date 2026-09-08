@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import inspect
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
@@ -20,6 +21,7 @@ class AbstractWorker(ABC):
     MAX_RESPONSE_SIZE = (
         1 * 1024 * 1024
     )  # 1MB response limit to not crash user systems (1MB of data is expanding to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
+    MAX_AGE = 31536000  # One year in seconds - used only by Carto but likely overwritten by default Carto infrastructure configuration
     DEFAULT_SRID = 4326
     max_records = 1000
 
@@ -130,6 +132,20 @@ class AbstractWorker(ABC):
         return_json.errors = [error]
         return return_json
 
+    def record_latency(self, rv: ReturnJson, start_time: float): 
+        """Record latency information to the API class
+
+        Args:
+            rv (ReturnJson): Return JSON object
+            start_time (float): Start time of the network call
+        """        
+        if not rv.errors: 
+            elapsed_time = time.perf_counter() - start_time
+        else: 
+            elapsed_time = float('inf')
+        self.latency = elapsed_time
+        self.latency_as_of = dt.datetime.now(dt.UTC)
+        print(f"API Latency: {self.name} - {self.latency:.4f} seconds - Measured at: {self.latency_as_of.strftime('%Y-%m-%d %H:%M:%S')}")
 
 def check_fields_valid(field_list: list[str], valid_fields: list[str], table: str):
     """Check that the fields requested are valid

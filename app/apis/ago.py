@@ -126,12 +126,10 @@ class Ago(AbstractWorker):
             start_time = time.perf_counter()
         async with session.get(url, params=params, timeout=timeout) as response:
             rv = await self.normalize_rv(request, response, schema, return_json, field_list)
-            if record_latency: 
-                elapsed_time = time.perf_counter() - start_time
-                self.latency = elapsed_time
-                now = dt.datetime.now(dt.UTC)
-                print(f'API: {self.name} - Latency: {self.latency} - Measured at: {now}')
-            return rv
+            if record_latency:
+                self.record_latency(rv, start_time)
+            else: 
+                return rv
 
     async def normalize_rv(
         self,
@@ -166,7 +164,7 @@ class Ago(AbstractWorker):
             else:
                 return self.raise_ago_data_error(data, return_json)
         else:
-            return await self.raise_ago_http_error(response)
+            return await self.raise_ago_http_error(response, return_json)
 
     def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
         """Coerce to a consistent representation of timestamp fields. AGO returns 

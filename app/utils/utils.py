@@ -292,6 +292,7 @@ class Api_Manager:
         self.map_api_to_params: dict[AbstractWorker, list[str]] = {}
         self.api_priority_queue: list[AbstractWorker] = []
         self.populate_initial_values()
+        self.reorder_priority_queue_delay = 300
 
     def populate_initial_values(self):
         """Populate the initial attributes for accessing information about the APIs"""
@@ -312,26 +313,46 @@ class Api_Manager:
         self.api_priority_queue.pop(index)
         self.api_priority_queue.append(api)
 
-    async def determine_latency(self): 
-        for _, api in self.map_str_to_api.items(): 
-            params = {
-                "table": "rtt_summary",
-                "fields": None,
-                "where": None,
-                "limit": 1,
-                "count_only": False,
-                "out_sr": AbstractWorker.DEFAULT_SRID,
-                "sql": None,
-                "session": session_manager(),
-                "timeout": 5,
-                "max_age": 0,
-                "request": None,
-                "schema": schema_cache.retrieve_table_schema("rtt_summary"),
-                "token": None,
-                "record_latency": True,
-            }
-            rv = await api.get(**params)
-            pass
+    async def reorder_priority_queue(self): 
+        """Run a continuous async loop to reorder the API priority queue 
+        according to the default ordering by pinging the table "rtt_summary",
+        deprioritizing any unhealthy APIs with latency >= 1 second. 
+        """        
+        HEALTHY_THRESHOLD = 5.0
+        while True: 
+            healthy_queue = []
+            unhealthy_queue = []
+            for api in self.map_str_to_api.values(): # Default ordering
+                try: 
+                    params = {
+                        "table": "rtt_summary",
+                        "fields": None,
+                        "where": None,
+                        "limit": 1,
+                        "count_only": False,
+                        "out_sr": AbstractWorker.DEFAULT_SRID,
+                        "sql": None,
+                        "session": session_manager(),
+                        "timeout": 5,
+                        "request": None,
+                        "schema": schema_cache.retrieve_table_schema("rtt_summary"),
+                        "token": None,
+                        "max_age": api.MAX_AGE, 
+                        "record_latency": True,
+                    }
+                    await api.get(**params)
+                    if api.latency < HEALTHY_THRESHOLD: 
+                        healthy_queue.append(api)
+                    else: 
+                        unhealthy_queue.append(api)
+                except Exception as e:  # noqa: BLE001
+                    print(f"ERROR in background task: {type(e).__name__}: {e}")
+                    unhealthy_queue.append(api)
+            unhealthy_queue.sort(key=lambda api: api.latency) # Sort the unhealthy APIs by latency asc
+            self.api_priority_queue = healthy_queue + unhealthy_queue
+            print(f'Queue: {[api.name for api in self.api_priority_queue]}\n')
+            await sleep(self.reorder_priority_queue_delay)
+
 
 def make_param_api_descriptions(api_manager: Api_Manager, param: str) -> str:
     """Create the description line noting for each query parameter which APIs accept it

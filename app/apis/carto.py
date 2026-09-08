@@ -161,12 +161,10 @@ class Carto(AbstractWorker):
             rv = await self.normalize_rv(
                 request, response, schema, limit, sql, return_json
             )
-            if record_latency: 
-                elapsed_time = time.perf_counter() - start_time
-                self.latency = elapsed_time
-                now = dt.datetime.now(dt.UTC)
-                print(f'API: {self.name} - Latency: {self.latency} - Measured at: {now}')
-            return rv
+            if record_latency:
+                self.record_latency(rv, start_time)
+            else: 
+                return rv
 
 
     async def normalize_rv(

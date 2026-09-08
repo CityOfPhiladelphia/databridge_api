@@ -37,18 +37,24 @@ def revise_openapi_paths():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Define code to run before the FastAPI app starts and after it shuts down,
-    namely to initiate the aiohttp session.
+    including to: 
+    1. Run a background async task to update the schemas repository
+    1. Run a background async task to reorder the API priority queue
+    1. Start/stop the aiohttp session.
 
     Args:
         app (FastAPI): App
     """
     schema_cache.check_latest_commit()
     commit_check_task = create_task(schema_cache.loop_commit_check())
+    reorder_priority_queue_task = create_task(api_manager.reorder_priority_queue())
     await session_manager.start()
-    await api_manager.determine_latency()
     assert schema_cache.cache
+
     yield
+
     commit_check_task.cancel()
+    reorder_priority_queue_task.cancel()
     await session_manager.stop()
 
 

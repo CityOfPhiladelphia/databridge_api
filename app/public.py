@@ -112,8 +112,8 @@ async def get_data(
             ge=0,
             le=31536000,
         ),
-    ] = 31536000,
-    session: aiohttp.ClientSession = Depends(session_manager), # Same session for all user requests
+    ] = AbstractWorker.MAX_AGE,
+    session: aiohttp.ClientSession = Depends(session_manager), # Same session for all user requests  # noqa: B008
 ) -> ReturnJson | JSONResponse:
     """Use this endpoint to retrieve data from the available
     services. At a minimum either the `table` or `sql` parameter is required.
@@ -152,10 +152,10 @@ async def get_data(
     if not service:
         links = Links(self=str(request.url))
         rv_combined = ReturnJson(links=links, errors=[])
-        for api in api_manager.map_api_to_params:
+        for api in api_manager.api_priority_queue:
             try:
                 rv = await api.get(**params)
-            except TimeoutError:
+            except TimeoutError:  # noqa: UP041
                 api_manager.deprioritize(api)
                 error = Error(
                     code=408,
@@ -176,7 +176,7 @@ async def get_data(
         api = api_manager.map_str_to_api[service.lower()]
         try:
             rv = await api.get(**params)
-        except TimeoutError:
+        except TimeoutError:  # noqa: UP041
             raise HTTPException(
                 status_code=408,
                 detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again",
