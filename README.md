@@ -1,7 +1,7 @@
 # Databridge API
 **_Author: James Midkiff_**
 
-Read the API docs at `<api_endpoint>/docs`
+Read the API docs at `<api_endpoint>/api/docs`
 
 The publicly accessible endpoints are actually at the path `/api`, i.e. the standard 
 `GET` request goes to `/api/get`, but this is hidden from the user by the reverse proxy, Mulesoft.

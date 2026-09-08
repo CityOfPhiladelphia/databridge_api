@@ -1,24 +1,37 @@
+import os
+import time
+
 import aiohttp
-import datetime as dt
 from fastapi import Request
-from .abstract import AbstractWorker, check_fields_valid
+from validators import url as valid_url
+
 from ..utils.models import (
-    ReturnJson,
-    Meta,
-    Links,
     Error,
-    GeoJsonFeatureCollection,
     GeoJsonFeature,
+    GeoJsonFeatureCollection,
+    Links,
+    Meta,
+    ReturnJson,
     TableSchema,
 )
+from .abstract import AbstractWorker, check_fields_valid
 
 
 class Databridge(AbstractWorker):
     def __init__(self):
         self.name = "Databridge-Public PostgREST API"
-        self.table_url = "https://postgrest-public-dev.citygeo.phila.city" # Used only for counts
-        self.rpc_url = "https://postgrest-public-dev.citygeo.phila.city/rpc" # PostgreSQL Function used because of ST_Trasform and GeoJSON preparation
-        self.sql_to_postgrest_url = "https://dev-sql-to-postgrest-api.citygeo.phila.city/convert"
+        self.db_url = os.environ.get(
+            "POSTGREST_DB_URL",
+            default="https://postgrest-public-dev.citygeo.phila.city",
+        )  # Used only for counts
+        self.rpc_url = f'{self.db_url}/rpc'  # PostgreSQL Function used because of ST_Trasform and GeoJSON preparation
+        self.sql_to_postgrest_url = os.environ.get(
+            "POSTGREST_SQL_URL",
+            default="https://dev-sql-to-postgrest-api.citygeo.phila.city/convert",
+        )
+        assert valid_url(self.db_url), f'Invalid Databridge db_url: "{self.db_url}"'
+        assert valid_url(self.rpc_url), f'Invalid Databridge rpc_url: "{self.rpc_url}"'
+        assert valid_url(self.sql_to_postgrest_url), f'Invalid Databridge sql_to_postgrest_url: "{self.sql_to_postgrest_url}"'
         self.max_records = 1000
 
     async def get_count(
@@ -40,7 +53,7 @@ class Databridge(AbstractWorker):
         elif isinstance(translator_rv, str):
             postgrest_url = translator_rv
 
-        url = f"{self.table_url}{postgrest_url}"
+        url = f"{self.db_url}{postgrest_url}"
         headers = {"prefer": "count=exact"}
         async with session.head(url, headers=headers, timeout=timeout) as response:
             return await self.normalize_rv_count(response, return_json)
@@ -71,11 +84,15 @@ class Databridge(AbstractWorker):
         sql: str | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request,
+        request: Request | None,
         schema: TableSchema, 
+        record_latency: bool = False, 
         **kwargs,
-    ) -> ReturnJson:
-        links = Links(self=str(request.url))
+    ) -> ReturnJson | None:
+        if request: 
+            links = Links(self=str(request.url))
+        else: 
+            links = Links()
         meta = Meta(service=self.name)
         return_json = ReturnJson(links=links, meta=meta)
 
@@ -106,18 +123,24 @@ class Databridge(AbstractWorker):
             field_list = None
 
         url = f'{self.rpc_url}{postgrest_url}'
+        if record_latency: 
+            start_time = time.perf_counter()
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(
+            rv = await self.normalize_rv(
                 request, response, schema, sql, limit, return_json, field_list
             )
+            if record_latency: 
+                self.record_latency(rv, start_time)
+            else: 
+                return rv
 
     async def normalize_rv(
         self,
-        request: Request,
+        request: Request | None,
         response: aiohttp.ClientResponse,
         schema: TableSchema | None,
         sql: str | None,
-        limit: int,
+        limit: int | None,
         return_json: ReturnJson,
         field_list: list[str] | None,
     ) -> ReturnJson:
@@ -125,6 +148,9 @@ class Databridge(AbstractWorker):
         data = await response.json()
         if response.ok:
             geojsons = []
+            record_count = len(data)
+            if sql and record_count >= self.max_records: 
+                return self.raise_content_too_large(return_json)
             for record in data: 
                 objectid = record["objectid"]
                 if schema and schema.geom_column:
@@ -146,8 +172,8 @@ class Databridge(AbstractWorker):
                 geojsons.append(geojson)
             gjfc = GeoJsonFeatureCollection(features=geojsons)
 
-            return_json.meta.record_count = len(gjfc.features)
-            if not sql and return_json.meta.record_count == limit:
+            return_json.meta.record_count = record_count
+            if request and not sql and return_json.meta.record_count == limit:
                 next_url = self.create_next_url(gjfc.features, request)
                 return_json.links.next = next_url
             return_json.data = gjfc
@@ -161,9 +187,8 @@ class Databridge(AbstractWorker):
             return_json.errors = [error]
             return return_json
 
-    def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
+    def harmonize_timestamp_fields(self): 
         """PostgREST returns ISO-8601 automatically"""        
-        pass
 
     async def get_postgrest_url(
         self,

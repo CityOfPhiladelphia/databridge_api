@@ -3,8 +3,10 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import tomllib
 from asyncio import sleep
 from enum import Enum
+from pathlib import Path
 
 import aiohttp
 from fastapi.exceptions import HTTPException
@@ -94,7 +96,7 @@ class SchemaCache:
         self.cache = replacement_cache
         print(f"Cache successfully updated. {len(self.cache):,} tables in cache.")
 
-    def search_recursively(self, path: str, replacement_cache={}):
+    def search_recursively(self, path: str, replacement_cache: dict | None = None):
         """Recursively search the local copy of the databridge-schemas repository
         for .json files representing table schemas. This function searches for files
         recursively by calling _itself_ recursively.
@@ -102,6 +104,8 @@ class SchemaCache:
         Args:
             path (str): Filepath for table's schema
         """
+        if replacement_cache is None: 
+            replacement_cache = {}
         for file in os.listdir(path):
             new_path = os.path.join(path, file)
             if os.path.isfile(new_path) and new_path.endswith(".json"):
@@ -175,6 +179,21 @@ class SchemaCache:
                 headers={"title": "Not Found"},
                 detail=f"Schema not found for table '{table}'",
             )
+
+
+def retrieve_api_version() -> str: 
+    """Retrieve the version of this API from the pyprject.toml file
+
+    Returns:
+        str: API version
+    """    
+    file_path = Path.cwd() / 'pyproject.toml'
+    assert file_path.is_file()
+    with open(file_path, mode='rb') as f: 
+        toml = tomllib.load(f)
+        version = toml['project']['version']
+
+    return version 
 
 
 description = """
@@ -267,12 +286,13 @@ class Api_Manager:
         """Note this method must be updated if any new APIs are added"""
         self.map_str_to_api: dict[str, AbstractWorker] = {
             "databridge": Databridge(),
-            "ago": Ago(),
             "carto": Carto(),
+            "ago": Ago(),
         }  # This is the initial priority order searched if no API is specified, and is the query param the user must submit
         self.map_api_to_params: dict[AbstractWorker, list[str]] = {}
         self.api_priority_queue: list[AbstractWorker] = []
         self.populate_initial_values()
+        self.reorder_priority_queue_delay = 300
 
     def populate_initial_values(self):
         """Populate the initial attributes for accessing information about the APIs"""
@@ -292,6 +312,46 @@ class Api_Manager:
         index = self.api_priority_queue.index(api)
         self.api_priority_queue.pop(index)
         self.api_priority_queue.append(api)
+
+    async def reorder_priority_queue(self): 
+        """Run a continuous async loop to reorder the API priority queue 
+        according to the default ordering by pinging the table "rtt_summary",
+        deprioritizing any unhealthy APIs with latency >= 1 second. 
+        """        
+        HEALTHY_THRESHOLD = 5.0
+        while True: 
+            healthy_queue = []
+            unhealthy_queue = []
+            for api in self.map_str_to_api.values(): # Default ordering
+                try: 
+                    params = {
+                        "table": "rtt_summary",
+                        "fields": None,
+                        "where": None,
+                        "limit": 1,
+                        "count_only": False,
+                        "out_sr": AbstractWorker.DEFAULT_SRID,
+                        "sql": None,
+                        "session": session_manager(),
+                        "timeout": 5,
+                        "request": None,
+                        "schema": schema_cache.retrieve_table_schema("rtt_summary"),
+                        "token": None,
+                        "max_age": api.MAX_AGE, 
+                        "record_latency": True,
+                    }
+                    await api.get(**params)
+                    if api.latency < HEALTHY_THRESHOLD: 
+                        healthy_queue.append(api)
+                    else: 
+                        unhealthy_queue.append(api)
+                except Exception as e:  # noqa: BLE001
+                    print(f"ERROR in background task: {type(e).__name__}: {e}")
+                    unhealthy_queue.append(api)
+            unhealthy_queue.sort(key=lambda api: api.latency) # Sort the unhealthy APIs by latency asc
+            self.api_priority_queue = healthy_queue + unhealthy_queue
+            print(f'Queue: {[api.name for api in self.api_priority_queue]}\n')
+            await sleep(self.reorder_priority_queue_delay)
 
 
 def make_param_api_descriptions(api_manager: Api_Manager, param: str) -> str:

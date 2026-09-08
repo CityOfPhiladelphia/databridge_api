@@ -1,4 +1,5 @@
 import datetime as dt
+import time
 
 import aiohttp
 from fastapi import Request
@@ -60,25 +61,9 @@ class Ago(AbstractWorker):
                 return_json.meta.records_total = data["properties"]["count"]
                 return return_json
             else:
-                title = f"{self.name} Error"
-                if data["error"]["message"]:
-                    title += f": {data['error']['message']}"
-                error = Error(
-                    code=data["error"]["code"],
-                    title=title,
-                    detail=data["error"]["details"][0],
-                )
-                return_json.errors = [error]
-                return return_json
+                return self.raise_ago_data_error(data, return_json)
         else:
-            error_detail = await response.text()
-            error = Error(
-                code=response.status,
-                title=f"{self.name} Error",
-                detail=error_detail,
-            )
-            return_json.errors = [error]
-            return return_json
+            return await self.raise_ago_http_error(response)
 
     # Do not remove any unused parameters as they are crucial to the documentation
     async def get(
@@ -91,11 +76,15 @@ class Ago(AbstractWorker):
         out_sr: int | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request,
-        schema: TableSchema,
+        request: Request | None, # None when it's not the user making the request but the Latency Checker
+        schema: TableSchema, 
+        record_latency: bool = False, 
         **kwargs,
     ) -> ReturnJson:
-        links = Links(self=str(request.url))
+        if request: 
+            links = Links(self=str(request.url))
+        else: 
+            links = Links()
         meta = Meta(service=self.name)
         return_json = ReturnJson(links=links, meta=meta)
 
@@ -133,12 +122,18 @@ class Ago(AbstractWorker):
             params["resultRecordCount"] = limit
         if kwargs["token"]:
             params["token"] = kwargs["token"].removeprefix("Bearer ")
+        if record_latency: 
+            start_time = time.perf_counter()
         async with session.get(url, params=params, timeout=timeout) as response:
-            return await self.normalize_rv(request, response, schema, return_json, field_list)
+            rv = await self.normalize_rv(request, response, schema, return_json, field_list)
+            if record_latency:
+                self.record_latency(rv, start_time)
+            else: 
+                return rv
 
     async def normalize_rv(
         self,
-        request: Request,
+        request: Request | None,
         response: aiohttp.ClientResponse,
         schema: TableSchema,
         return_json: ReturnJson,
@@ -146,9 +141,9 @@ class Ago(AbstractWorker):
     ) -> ReturnJson:
         service_url = self.mask_service_url(request, response)
         return_json.meta.service_url = service_url
-        # AGO REST API doesn't respect HTTP status codes
         if response.ok:
             data = await response.json()
+            # AGO REST API doesn't always respect HTTP status codes
             if "error" not in data:
                 records = data["features"]
                 self.harmonize_timestamp_fields(records, schema)
@@ -158,32 +153,18 @@ class Ago(AbstractWorker):
                 return_json.meta.record_count = len(gjfc.features)
                 try:
                     data["properties"]["exceededTransferLimit"]
-                    next_url = self.create_next_url(gjfc.features, request)
-                    return_json.links.next = next_url
                 except KeyError:
                     pass
+                else: 
+                    if request: 
+                        next_url = self.create_next_url(gjfc.features, request)
+                        return_json.links.next = next_url
                 return_json.data = gjfc
                 return return_json
             else:
-                title = f"{self.name} Error"
-                if data["error"]["message"]:
-                    title += f": {data['error']['message']}"
-                error = Error(
-                    code=data["error"]["code"],
-                    title=title,
-                    detail=data["error"]["details"][0],
-                )
-                return_json.errors = [error]
-                return return_json
+                return self.raise_ago_data_error(data, return_json)
         else:
-            error_detail = await response.text()
-            error = Error(
-                code=response.status,
-                title=f"{self.name} Error",
-                detail=error_detail,
-            )
-            return_json.errors = [error]
-            return return_json
+            return await self.raise_ago_http_error(response, return_json)
 
     def harmonize_timestamp_fields(self, records: list[dict], schema: TableSchema): 
         """Coerce to a consistent representation of timestamp fields. AGO returns 
@@ -195,14 +176,13 @@ class Ago(AbstractWorker):
         """        
         for record in records:
             for field in record["properties"]:
-                if field in schema.timestamp_fields:
-                    if record["properties"][field]: 
-                        record["properties"][field] = dt.datetime.fromtimestamp(
-                            record["properties"][field] / 1000
-                        )
+                if field in schema.timestamp_fields and record["properties"][field]: 
+                    record["properties"][field] = dt.datetime.fromtimestamp(  # noqa: DTZ006
+                        record["properties"][field] / 1000
+                    )
 
     def mask_service_url(
-        self, request: Request, response: aiohttp.ClientResponse
+        self, request: Request | None, response: aiohttp.ClientResponse
     ) -> str:
         """Mask a Bearer authorization token in the service_url for safe logging
 
@@ -211,11 +191,53 @@ class Ago(AbstractWorker):
             response (aiohttp.ClientResponse): Downstream API service response
 
         Returns:
-            str: Safely-masked service url
+            str | None: Safely-masked service url
         """
         service_url = str(response.url)
-        if "authorization" in request.headers:
+        if request and "authorization" in request.headers:
             auth = request.headers["authorization"]
             token = auth.removeprefix("Bearer ")
             service_url = service_url.replace(token, "********")
         return service_url
+
+    def raise_ago_data_error(self, data: dict, return_json:ReturnJson) -> ReturnJson: 
+        """Raise the error return in the AGO data response
+
+        Args:
+            data (dict): Returned AGO data
+            return_json (ReturnJson): Return JSON object
+
+        Returns:
+            ReturnJson: Return JSON object with error attached
+        """
+        title = f"{self.name} Error"
+        if data["error"]["message"]:
+            title += f": {data['error']['message']}"
+        error = Error(
+            code=data["error"]["code"],
+            title=title,
+            detail=data["error"]["details"][0],
+        )
+        return_json.errors = [error]
+        return return_json
+
+    async def raise_ago_http_error(
+        self, response: aiohttp.ClientResponse, return_json: ReturnJson
+    ) -> ReturnJson:
+        """Raise the HTTP error returned by AGO
+
+        Args:
+            response (aiohttp.ClientResponse): HTTP Response
+            return_json (ReturnJson): Return JSON object
+
+        Returns:
+            ReturnJson: Return JSON object with error attached
+        """        
+        error_detail = await response.text()
+        error = Error(
+            code=response.status,
+            title=f"{self.name} Error",
+            detail=error_detail,
+        )
+        return_json.errors = [error]
+        return return_json

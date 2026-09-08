@@ -1,5 +1,5 @@
-from collections.abc import Generator
 import datetime as dt
+from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -293,17 +293,15 @@ def test_valid_sql(client: TestClient, service: str):
         rv = response.json()
         assert rv["meta"]["record_count"] == 5
         assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
-        assert "next" not in rv["links"].keys()
+        assert "next" not in rv["links"]
 
 
-@pytest.mark.parametrize("service", ["carto"])
+@pytest.mark.parametrize("service", ["carto", "databridge"])
 def test_valid_sql_too_large_for_carto(client: TestClient, service: str):
-    """Test that the `sql` parameter works will error if the response from Carto
-    is too large to handle but smaller than a timeout. This test
-    should only run on Carto which has no inherent limits to response data size.
-    PostgREST server has a configured limit of 1000 records"""
+    """Test that the `sql` parameter works will error if the amount of data requested
+    is too large to handle but smaller than a timeout"""
     params = {
-        "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 50000",
+        "sql": f"SELECT * FROM {GOOD_TABLES[0]} LIMIT 1001",
         "service": service,
         "max_age": 0,
     }
@@ -344,7 +342,7 @@ def test_valid_harmonized_timestamps(client: TestClient):
         "recording_date": None,
         "document_date": None,
     }
-    for service in api_manager.map_str_to_api.keys(): 
+    for service in api_manager.map_str_to_api: 
         params = {
             "table": GOOD_TABLES[0],
             "fields": ",".join(timestamp_dict.keys()),
@@ -356,7 +354,7 @@ def test_valid_harmonized_timestamps(client: TestClient):
         assert response.status_code == 200
         data = response.json()
         for field, value in data['data']['features'][0]['properties'].items(): 
-            if field in timestamp_dict.keys() and value: 
+            if field in timestamp_dict and value: 
                 assert dt.datetime.fromisoformat(value)
                 if timestamp_dict[field]: 
                     assert timestamp_dict[field] == value
@@ -389,14 +387,14 @@ def compare_dicts(
     d1, d2, output: dict, prefix=""
 ):
     for key in d1:
-        if key not in d2.keys():
+        if key not in d2:
             output["d1_only"].append({f"d1.{prefix}{key}": d1[key]})
         elif d1[key] != d2[key]:
             output["different"].append(
                 {f"d1.{prefix}{key}": d1[key], f"d2.{prefix}{key}": d2[key]}
             )
     for key in d2:
-        if key not in d1.keys():
+        if key not in d1:
             output["d2_only"].append({f"d2.{prefix}{key}": d1[key]})
     return output
 
@@ -417,6 +415,7 @@ def test_invalid_nothing(client: TestClient, service: None):
     assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
+
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_invalid_nothing2(client: TestClient, service: str):
@@ -529,22 +528,6 @@ def test_invalid_sql_ddl_update(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
-    data = response.json()
-    assert "errors" in data
-
-
-@pytest.mark.parametrize("service", ["Carto"])
-def test_invalid_sql_too_large_for_carto(client: TestClient, service: None):
-    """Test that the API fails if too large of a dataset is requsted. This test 
-    should only run on Carto which has no inherent limits to response data size. 
-    PostgREST server has a configured limit of 1000 records"""
-    params = {
-        "sql": f"SELECT * FROM {GOOD_TABLES[0]}",
-        "service": service,
-        "max_age": 0,
-    }
-    response = client.get(f"{public_prefix}/get", params=params)
-    assert response.status_code >= 400 and response.status_code < 500
     data = response.json()
     assert "errors" in data
 
