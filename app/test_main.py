@@ -73,6 +73,8 @@ def test_valid(client: TestClient, service: str, table: str):
     assert response.status_code == 200
     assert rv["links"]["self"] == response.url
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv['data']['type'] == 'FeatureCollection'
+    assert rv['data']['features'][0]['type'] == 'Feature'
 
 
 @pytest.mark.parametrize("count_only", [True, False])
@@ -271,16 +273,17 @@ def test_valid_srid(client: TestClient, service: str):
     assert rv2["data"]["features"], f'Service {service} found zero features in table {table}'
 
 
+@pytest.mark.parametrize("fields", ["*", "document_id"])
 @pytest.mark.parametrize("service", ["ago", "carto", "databridge"])
-def test_valid_sql(client: TestClient, service: str):
+def test_valid_sql(client: TestClient, service: str, fields: str):
     """Test that the `sql` parameter works for Carto & Databridge and that it 
-    fails correctly for AGO"""
+    fails correctly for AGO when requesting all fields and when not requesting objectid"""
     table = GOOD_TABLES[0]
     params = {
         "table": "ANSTHES",  # Should have no effect
         "fields": "whatever,whatever",  # Should have no effect
         "limit": 3,  # Should have no effect
-        "sql": f"SELECT * FROM {table} LIMIT 5",
+        "sql": f"SELECT {fields} FROM {table} LIMIT 5",
         "service": service,
         "max_age": 0,
     }
@@ -294,6 +297,8 @@ def test_valid_sql(client: TestClient, service: str):
         assert rv["meta"]["record_count"] == 5
         assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
         assert "next" not in rv["links"]
+        assert rv['data']['type'] == 'FeatureCollection'
+        assert rv['data']['features'][0]['type'] == 'Feature'
 
 
 @pytest.mark.parametrize("service", ["carto", "databridge"])

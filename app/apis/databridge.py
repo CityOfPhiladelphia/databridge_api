@@ -152,7 +152,10 @@ class Databridge(AbstractWorker):
             if sql and record_count >= self.max_records: 
                 return self.raise_content_too_large(return_json)
             for record in data: 
-                objectid = record["objectid"]
+                if 'objectid' in record: 
+                    objectid = record["objectid"]
+                else: 
+                    objectid = None
                 if schema and schema.geom_column:
                     geometry = record.pop(schema.geom_column)
                 else:
