@@ -24,7 +24,7 @@ public_router = APIRouter(prefix=public_prefix, tags=["Routes"])
 @public_router.get(
     "/get",
     response_model=ReturnJson,
-    response_model_exclude_unset=True,
+    response_model_exclude_none=True
 )
 async def get_data(
     request: Request,
