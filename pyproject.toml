@@ -1,6 +1,6 @@
 [project]
 name = "databridge-api"
-version = "0.5.0"
+version = "0.5.1"
 description = "REST API for Accessing Databridge"
 readme = "README.md"
 requires-python = ">=3.14"

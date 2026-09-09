@@ -1,5 +1,6 @@
-from pydantic import BaseModel, HttpUrl, BeforeValidator, ConfigDict
 from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict, HttpUrl
 
 
 class GeoJsonGeometry(BaseModel):
