@@ -1,3 +1,4 @@
+import os
 from asyncio import create_task
 from contextlib import asynccontextmanager
 
@@ -17,13 +18,13 @@ from .utils.utils import (
 )
 
 
-def revise_openapi_paths(): 
-    """Revise the URL paths in the OpenAPI docs to remove the public path prefix. The 
-    plan is to host this App behind a reverse proxy and only allow public access 
-    to the public endpoints covered by the Public Prefix (currently "/api"). Because 
+def revise_openapi_paths():
+    """Revise the URL paths in the OpenAPI docs to remove the public path prefix. The
+    plan is to host this App behind a reverse proxy and only allow public access
+    to the public endpoints covered by the Public Prefix (currently "/api"). Because
     this directory will be the root for the reverse proxy and users will not know this,
-    the URL paths need to remove the public prefix. 
-    """    
+    the URL paths need to remove the public prefix.
+    """
     app.openapi()
     revised_openapi_paths = {}
     openapi_paths = app.openapi_schema["paths"]
@@ -37,7 +38,7 @@ def revise_openapi_paths():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Define code to run before the FastAPI app starts and after it shuts down,
-    including to: 
+    including to:
     1. Run a background async task to update the schemas repository
     1. Run a background async task to reorder the API priority queue
     1. Start/stop the aiohttp session.
@@ -64,7 +65,8 @@ app = FastAPI(
     title="Databridge API",
     description=description,
     docs_url=f"{public_prefix}/docs",
-    version = app_version
+    version = app_version,
+    root_path=os.getenv("ROOT_PATH","")
 )
 app.include_router(internal_router)
 app.include_router(public_router)
