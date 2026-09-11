@@ -7,14 +7,14 @@ from fastapi.responses import JSONResponse
 
 from .internal import internal_router
 from .public import public_prefix, public_router
-from .utils.models import Error, Links, ReturnJson
+from .utils.models import Error, Links, Meta, ReturnJson
 from .utils.utils import (
     api_manager,
     description,
-    retrieve_api_version,
     schema_cache,
     session_manager,
 )
+from .utils.utils_models import app_version
 
 
 def revise_openapi_paths(): 
@@ -58,7 +58,6 @@ async def lifespan(app: FastAPI):
     await session_manager.stop()
 
 
-app_version = retrieve_api_version()
 app = FastAPI(
     lifespan=lifespan,
     title="Databridge API",
@@ -77,7 +76,7 @@ async def validation_exception_handler(
 ) -> JSONResponse:
     """Overwrite default FastAPI Validation Error to return consistent with JSON:API Spec"""
     links = Links(self=str(request.url))
-    rv_combined = ReturnJson(links=links, errors=[])
+    rv_combined = ReturnJson(links=links, errors=[], meta=Meta())
     for err in exc.errors():
         error = Error(
             code="422",
@@ -97,7 +96,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     """Overwrite default FastAPI HTTP Error to return consistent with JSON:API Spec"""
     links = Links(self=str(request.url))
     error = Error(code=exc.status_code, title=exc.headers["title"], detail=exc.detail)
-    rv = ReturnJson(links=links, errors=[error])
+    rv = ReturnJson(links=links, errors=[error], meta=Meta())
     response = JSONResponse(
         status_code=exc.status_code,
         content=rv.model_dump(mode="json", exclude_none=True),

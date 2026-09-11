@@ -2,6 +2,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, HttpUrl
 
+from .utils_models import app_version
+
 
 class GeoJsonGeometry(BaseModel):
     """GeoJSON Feature Geometry""" 
@@ -38,7 +40,8 @@ class Links(BaseModel, validate_assignment=True):
 
 class Meta(BaseModel, validate_assignment=True): 
     """Additional information generated for the user"""
-    service: str
+    databridge_api_version: str = app_version
+    service: str = None
     service_url: HttpUrl = None
     service_available_query_parameters: list[str] = None
     record_count: int = None
