@@ -75,6 +75,7 @@ def test_valid(client: TestClient, service: str, table: str):
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
     assert rv['data']['type'] == 'FeatureCollection'
     assert rv['data']['features'][0]['type'] == 'Feature'
+    assert rv['meta']['databridge_api_version']
 
 
 @pytest.mark.parametrize("count_only", [True, False])
@@ -98,6 +99,7 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
     assert response.status_code == 200
     assert rv["links"]["self"] == response.url
     assert "********" in rv["meta"]["service_url"]
+    assert rv["meta"]["databridge_api_version"]
     if 'records_total' in rv['meta']: 
         assert rv["meta"]["records_total"] > 0, f"Service {service} found zero features in table {table}"
     elif 'record_count' in rv['meta']: 
@@ -114,6 +116,7 @@ def test_valid_private_no_interfere(client: TestClient, service: str, token: str
     )
     assert response.status_code == 200
     rv = response.json()
+    assert rv["meta"]["databridge_api_version"]
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
 
 
@@ -131,6 +134,7 @@ def test_valid_fields(client: TestClient, service: str):
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
+    assert rv["meta"]["databridge_api_version"]
     data = rv["data"]
     for feature in data["features"]:
         assert set(feature["properties"].keys()) == set(params["fields"].split(","))
@@ -149,6 +153,7 @@ def test_valid_fields2(client: TestClient, service: str):
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
     rv = response.json()
+    assert rv["meta"]["databridge_api_version"]
     data = rv["data"]
     for feature in data["features"]:
         assert set(feature["properties"].keys()) == set(params["fields"].split(","))
@@ -170,6 +175,7 @@ def test_valid_where(client: TestClient, service: str):
     assert rv["meta"]["record_count"] == 2
     assert len(rv["data"]["features"]) == 2
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -191,12 +197,14 @@ def test_valid_where_parenthesization(client: TestClient, service: str):
     assert response.status_code == 200
     next_url = rv["links"]["next"]
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv["meta"]["databridge_api_version"]
 
     response2 = client.get(next_url)
     rv2 = response2.json()
     rv2_first_objectid = int(rv2["data"]["features"][0]["id"])
     assert rv2_first_objectid >= LIMIT
     assert rv2["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv2["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("table", [GOOD_TABLES[0]])
@@ -214,6 +222,7 @@ def test_valid_limit_next(client: TestClient, service: str, table: str):
     max_id = max(ids)
     assert rv["meta"]["record_count"] == LIMIT
     assert len(rv["data"]["features"]) == LIMIT
+    assert rv["meta"]["databridge_api_version"]
 
     next_url = rv["links"]["next"]
     response2 = client.get(next_url)
@@ -224,6 +233,7 @@ def test_valid_limit_next(client: TestClient, service: str, table: str):
     ids2 = [feature["id"] for feature in data2["features"]]
     assert rv2["meta"]["record_count"] == LIMIT
     assert len(rv2["data"]["features"]) == LIMIT
+    assert rv2["meta"]["databridge_api_version"]
     for id2 in ids2:
         assert id2 > max_id
 
@@ -245,6 +255,7 @@ def test_valid_count_only(client: TestClient, service: str):
     assert response.status_code == 200
     rv = response.json()
     assert rv["meta"]["records_total"] == 5
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -263,6 +274,7 @@ def test_valid_srid(client: TestClient, service: str):
     assert response.status_code == 200
     data = rv["data"]
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv["meta"]["databridge_api_version"]
 
     params["out_sr"] = 2272
     response2 = client.get(f"{public_prefix}/get", params=params)
@@ -271,6 +283,7 @@ def test_valid_srid(client: TestClient, service: str):
     data2 = rv2["data"]
     assert data != data2
     assert rv2["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv2["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("fields", ["*", "document_id"])
@@ -288,8 +301,10 @@ def test_valid_sql(client: TestClient, service: str, fields: str):
         "max_age": 0,
     }
     response = client.get(f"{public_prefix}/get", params=params)
+    rv = response.json()
     if service == 'ago':
         assert response.status_code >= 400 and response.status_code < 500
+        assert rv["meta"]["databridge_api_version"]
         return None
     else: 
         assert response.status_code == 200
@@ -299,6 +314,7 @@ def test_valid_sql(client: TestClient, service: str, fields: str):
         assert "next" not in rv["links"]
         assert rv['data']['type'] == 'FeatureCollection'
         assert rv['data']['features'][0]['type'] == 'Feature'
+        assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", ["carto", "databridge"])
@@ -312,6 +328,8 @@ def test_valid_sql_too_large_for_carto(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 413
+    rv = response.json()
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("table", GOOD_TABLES)
@@ -323,6 +341,7 @@ def test_valid_no_service(client: TestClient, table: str, service: None):
     assert response.status_code == 200
     rv = response.json()
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -336,6 +355,8 @@ def test_valid_timeout(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 408
+    rv = response.json()
+    assert rv["meta"]["databridge_api_version"]
 
 
 def test_valid_harmonized_timestamps(client: TestClient):
@@ -357,8 +378,9 @@ def test_valid_harmonized_timestamps(client: TestClient):
         }
         response = client.get(f"{public_prefix}/get", params=params)
         assert response.status_code == 200
-        data = response.json()
-        for field, value in data['data']['features'][0]['properties'].items(): 
+        rv = response.json()
+        assert rv["meta"]["databridge_api_version"]
+        for field, value in rv['data']['features'][0]['properties'].items(): 
             if field in timestamp_dict and value: 
                 assert dt.datetime.fromisoformat(value)
                 if timestamp_dict[field]: 
@@ -418,8 +440,9 @@ def test_invalid_nothing(client: TestClient, service: None):
     """Test that the API fails if no `sql` or `table` parameters passed"""
     response = client.get(f"{public_prefix}/get")
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -428,8 +451,9 @@ def test_invalid_nothing2(client: TestClient, service: str):
     params = {"service": service}
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -438,8 +462,9 @@ def test_invalid_table(client: TestClient, service: str):
     params = {"table": "bad_table", "service": service}
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -453,8 +478,9 @@ def test_invalid_fields(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -467,8 +493,9 @@ def test_invalid_where(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("limit", ["-1", "abc"])
@@ -484,8 +511,9 @@ def test_invalid_limit(client: TestClient, service: str, limit: str):
     assert (
         response.status_code >= 400 and response.status_code <= 500
     )  # Carto returns a 500 error here
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -497,8 +525,9 @@ def test_invalid_count_only(
     params = {"table": "ASNTEHUSA", "count_only": "true", "service": service}
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -507,8 +536,9 @@ def test_invalid_sql(client: TestClient, service: str):
     params = {"sql": "SELECT * FROM ANSTEHUSANTH", "service": service}
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -520,8 +550,9 @@ def test_invalid_sql_ddl_insert(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
@@ -533,8 +564,9 @@ def test_invalid_sql_ddl_update(client: TestClient, service: str):
     }
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code <= 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.parametrize("service", [None])
@@ -544,5 +576,6 @@ def test_invalid_no_service(client: TestClient, service: None):
     params = {"table": "bad_table", "limit": 1}
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code >= 400 and response.status_code < 500
-    data = response.json()
-    assert "errors" in data
+    rv = response.json()
+    assert "errors" in rv
+    assert rv["meta"]["databridge_api_version"]

@@ -7,7 +7,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .apis.abstract import AbstractWorker
-from .utils.models import Error, Links, ReturnJson
+from .utils.models import Error, Links, Meta, ReturnJson
 from .utils.utils import (
     Service,
     api_manager,
@@ -16,6 +16,7 @@ from .utils.utils import (
     schema_cache,
     session_manager,
 )
+from .utils.utils_models import app_version
 
 public_prefix = "/api"
 public_router = APIRouter(prefix=public_prefix, tags=["Routes"])
@@ -151,7 +152,7 @@ async def get_data(
     }
     if not service:
         links = Links(self=str(request.url))
-        rv_combined = ReturnJson(links=links, errors=[])
+        rv_combined = ReturnJson(links=links, errors=[], meta=Meta())
         for api in api_manager.api_priority_queue:
             try:
                 rv = await api.get(**params)
@@ -186,12 +187,14 @@ async def get_data(
         return generate_final_response(rv)
 
 
-@public_router.get("/api_priority")
-async def get_api_priority() -> list:
+@public_router.get("/api_priority", response_model_exclude_none=True)
+async def get_api_priority() -> dict:
     """Return the API names in the order they will be searched if no `service`
     is specified. If an API returns a TimeoutError during a request, then it will be
     placed last in priority order."""
-    return [api.name for api in api_manager.api_priority_queue]
+    api_priority = [api.name for api in api_manager.api_priority_queue]
+    d = {'api_priority': api_priority, 'databridge_api_version': app_version}
+    return d
 
 
 @public_router.get("/")

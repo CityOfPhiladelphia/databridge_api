@@ -63,7 +63,7 @@ class Ago(AbstractWorker):
             else:
                 return self.raise_ago_data_error(data, return_json)
         else:
-            return await self.raise_ago_http_error(response)
+            return await self.raise_ago_http_error(response, return_json)
 
     # Do not remove any unused parameters as they are crucial to the documentation
     async def get(
