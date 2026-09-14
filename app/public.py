@@ -1,3 +1,4 @@
+import os
 from asyncio import TimeoutError
 from typing import Annotated
 
@@ -18,6 +19,7 @@ from .utils.utils import (
 )
 from .utils.utils_models import app_version
 
+ROOT_PATH = os.getenv("ROOT_PATH", "/databridge-api/v1")
 public_prefix = "/api"
 public_router = APIRouter(prefix=public_prefix, tags=["Routes"])
 
@@ -198,6 +200,11 @@ async def get_api_priority() -> dict:
 
 
 @public_router.get("/")
-async def docs() -> RedirectResponse:
-    """Redirect to the `docs` endpoint"""
-    return RedirectResponse(url=f"{public_prefix}/docs")
+async def docs(request: Request) -> RedirectResponse:
+    """Redirect root path to the docs endpoint for both proxy and local environments."""
+    if "x-forwarded-host" in request.headers:
+        # Behind MuleSoft proxy
+        return RedirectResponse(url=f"{ROOT_PATH}/docs")
+    else:
+        # Local testing
+        return RedirectResponse(url=f"{public_prefix}/docs")
