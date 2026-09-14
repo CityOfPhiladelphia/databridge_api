@@ -5,6 +5,7 @@ from typing import Annotated
 import aiohttp
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.exceptions import HTTPException
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .apis.abstract import AbstractWorker
@@ -24,11 +25,7 @@ public_prefix = "/api"
 public_router = APIRouter(prefix=public_prefix, tags=["Routes"])
 
 
-@public_router.get(
-    "/get",
-    response_model=ReturnJson,
-    response_model_exclude_none=True
-)
+@public_router.get("/get", response_model=ReturnJson, response_model_exclude_none=True)
 async def get_data(
     request: Request,
     table: Annotated[
@@ -208,3 +205,23 @@ async def docs(request: Request) -> RedirectResponse:
     else:
         # Local testing
         return RedirectResponse(url=f"{public_prefix}/docs")
+
+
+@public_router.get("/redoc", include_in_schema=False)
+@public_router.get("/docs", include_in_schema=False)
+async def override_docs_html(request: Request):
+    """Override default docs to explicitly point to the external proxy URL if the
+    request comes with a forwarded-host header"""
+    if "x-forwarded-host" in request.headers:
+        openapi_url = f"{ROOT_PATH}/openapi.json"
+    else:
+        openapi_url = f"{public_prefix}/openapi.json"
+
+    if request["path"].endswith("redoc"):
+        return get_redoc_html(
+            openapi_url=openapi_url, title=f"{request.app.title} - Swagger UI"
+        )
+    else:
+        return get_swagger_ui_html(
+            openapi_url=openapi_url, title=f"{request.app.title} - Swagger UI"
+        )
