@@ -4,9 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .internal import internal_router
-from .public import public_prefix, public_router
+from .public import ROOT_PATH, public_prefix, public_router
 from .utils.models import Error, Links, Meta, ReturnJson
 from .utils.utils import (
     api_manager,
@@ -57,14 +58,18 @@ async def lifespan(app: FastAPI):
     reorder_priority_queue_task.cancel()
     await session_manager.stop()
 
-
 app = FastAPI(
     lifespan=lifespan,
     title="Databridge API",
     description=description,
-    docs_url=f"{public_prefix}/docs",
-    version = app_version
+    version = app_version, 
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=f"{public_prefix}/openapi.json",
+    root_path=ROOT_PATH
 )
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.include_router(internal_router)
 app.include_router(public_router)
 revise_openapi_paths()

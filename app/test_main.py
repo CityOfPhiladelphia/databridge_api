@@ -63,6 +63,21 @@ def test_all_schemas(client: TestClient):
         assert table in data['schemas']
 
 
+def test_docs(client: TestClient): 
+    response = client.get(f'{public_prefix}/docs')
+    assert response.status_code == 200
+
+
+def test_docs_redirect(client: TestClient): 
+    response = client.get(f'{public_prefix}/')
+    assert response.status_code == 200
+
+
+def test_redoc(client: TestClient): 
+    response = client.get(f'{public_prefix}/redoc')
+    assert response.status_code == 200
+
+
 @pytest.mark.parametrize("table", GOOD_TABLES)
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_valid(client: TestClient, service: str, table: str):
