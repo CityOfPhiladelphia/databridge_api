@@ -22,7 +22,7 @@ from .abstract import AbstractWorker, check_fields_valid
 class Carto(AbstractWorker):
     def __init__(self):
         self.name = "Carto V3 SQL API"
-        self.base_url = (
+        self.base_url = os.environ.get('CARTO_URL', 
             "https://gcp-us-east1.api.carto.com/v3/sql/databridge-public-ro/query"
         )
         self.max_records = 1000
