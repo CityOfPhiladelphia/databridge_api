@@ -320,7 +320,6 @@ def test_valid_sql(client: TestClient, service: str, fields: str):
     if service == 'ago':
         assert response.status_code >= 400 and response.status_code < 500
         assert rv["meta"]["databridge_api_version"]
-        return None
     else: 
         assert response.status_code == 200
         rv = response.json()
