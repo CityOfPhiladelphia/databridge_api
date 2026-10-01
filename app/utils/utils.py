@@ -33,7 +33,7 @@ class SchemaCache:
         # async check at self.commit_check_delay interval
         self.folder = self.set_folder()
         self.root_path = self.set_folder()
-        self.commit_check_delay = 300
+        self.commit_check_delay = 60
         self.latest_repo_target: str = None
         self.cache: dict[str, TableSchema] = {}
         self.invalid_fields: list[str] = [
