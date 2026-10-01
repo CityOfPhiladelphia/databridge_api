@@ -12,7 +12,7 @@ from .utils.utils_tests import generate_ago_token
 # Response validation handled by pydantic on API server itself
 # Still have to coerce FastAPI default validation errors to JSON:API spec
 GOOD_TABLES = [
-    "rtt_summary",  # Public, geometric, AGO & Carto. Large enough to crash this API.
+    "dor_parcel",  # Public, geometric, AGO & Carto. Large enough to crash this API.
     "ppd_complaints",  # Public, non-geometric, AGO & Carto,
 ]
 PRIVATE_TABLE = "city_locations_point"  # Private, geometric, AGO only
@@ -142,7 +142,7 @@ def test_valid_fields(client: TestClient, service: str):
     params = {
         "table": table,
         "limit": 2,
-        "fields": "objectid,document_id,document_type,display_date",
+        "fields": "objectid,mapreg,addr_std,orig_date,pin",
         "service": service,
         "max_age": 0,
     }
@@ -161,7 +161,7 @@ def test_valid_fields2(client: TestClient, service: str):
     params = {
         "table": GOOD_TABLES[0],
         "limit": 2,
-        "fields": "document_id,document_type,display_date",
+        "fields": "mapreg,addr_std,orig_date,pin",
         "service": service,
         "max_age": 0,
     }
@@ -301,7 +301,7 @@ def test_valid_srid(client: TestClient, service: str):
     assert rv2["meta"]["databridge_api_version"]
 
 
-@pytest.mark.parametrize("fields", ["*", "document_id"])
+@pytest.mark.parametrize("fields", ["*", "addr_std"])
 @pytest.mark.parametrize("service", ["ago", "carto", "databridge"])
 def test_valid_sql(client: TestClient, service: str, fields: str):
     """Test that the `sql` parameter works for Carto & Databridge and that it 
@@ -377,10 +377,8 @@ def test_valid_harmonized_timestamps(client: TestClient):
     """Test that the data returned from the downstream APIs has the same ISO-8601 
     formatted timestamp values"""
     timestamp_dict = {
-        "display_date": None,
-        "receipt_date": None,
-        "recording_date": None,
-        "document_date": None,
+        "inactdate": None,
+        "orig_date": None,
     }
     for service in api_manager.map_str_to_api: 
         params = {
