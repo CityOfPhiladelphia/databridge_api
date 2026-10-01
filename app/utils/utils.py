@@ -27,7 +27,12 @@ class SchemaCache:
     def __init__(self):
         self._prod_folder = "/var/git/databridge-schemas"
         self._local_dev_folder = "/scripts/databridge-schemas"
+        # self.folder and self.root_path first resolves to one of the above when this app starts.
+        # then self.folder will be set to the resolved symlink during a regular
+        # self.root_path stays the same so we're always looking at the symlink name to resolve the path.
+        # async check at self.commit_check_delay interval
         self.folder = self.set_folder()
+        self.root_path = self.set_folder()
         self.commit_check_delay = 300
         self.latest_repo_target: str = None
         self.cache: dict[str, TableSchema] = {}
@@ -40,16 +45,16 @@ class SchemaCache:
         self.latest_check: dt.datetime = None
         self.latest_update: dt.datetime = None
 
-    def set_folder(self): 
-        if os.path.isdir(self._prod_folder): 
+    def set_folder(self):
+        if os.path.isdir(self._prod_folder):
             return self._prod_folder
-        elif os.path.isdir(self._local_dev_folder): 
+        elif os.path.isdir(self._local_dev_folder):
             return self._local_dev_folder
-        else: 
+        else:
             raise AssertionError(
                 f'databridge-schemas repo not found at "{self._prod_folder}" or "{self._local_dev_folder}"'
             )
-    
+
     async def loop_commit_check(self):
         """Run a continuous asynchronous loop to quickly absorb any updates to the
         schemas repository
@@ -63,16 +68,17 @@ class SchemaCache:
         # Or if we're locally developing, to the full path of the repo.
         # Either will work with realpath().
         # (e.g., /var/git/.worktrees/<some_commit_hash>/)
-        current_target = os.path.realpath(self.folder)
+        current_target = os.path.realpath(self.root_path)
         self.latest_check = dt.datetime.now(tz=dt.UTC)
 
         if getattr(self, 'latest_repo_target', None) != current_target:
-            print(f"New symlink target detected: {current_target} Updating SchemaCache.")
+            print(f"New symlink target detected: {current_target}. Updating SchemaCache.")
             try:
-                # Offload the blocking I/O to a separate thread
                 self.latest_repo_target = current_target
-                # Overwrite the folder path with the new target
+                # Update the pointer used by search_recursively
                 self.folder = current_target
+
+                # Offload the blocking I/O to a separate thread
                 self.update()
 
             except FileNotFoundError:
@@ -102,7 +108,7 @@ class SchemaCache:
         Args:
             path (str): Filepath for table's schema
         """
-        if replacement_cache is None: 
+        if replacement_cache is None:
             replacement_cache = {}
         for file in os.listdir(path):
             new_path = os.path.join(path, file)
@@ -194,7 +200,7 @@ internal configurations
 **Source code: https://github.com/CityOfPhiladelphia/databridge_api**
 
 ### Databridge-Public
-The Databridge-Public contains public tables only; it is configured with a PostgREST server. 
+The Databridge-Public contains public tables only; it is configured with a PostgREST server.
 
 ### Carto SQL API V3
 Carto solely contains public tables, but they
@@ -296,17 +302,17 @@ class Api_Manager:
         self.api_priority_queue.pop(index)
         self.api_priority_queue.append(api)
 
-    async def reorder_priority_queue(self): 
-        """Run a continuous async loop to reorder the API priority queue 
+    async def reorder_priority_queue(self):
+        """Run a continuous async loop to reorder the API priority queue
         according to the default ordering by pinging the table "rtt_summary",
-        deprioritizing any unhealthy APIs with latency >= 1 second. 
-        """        
+        deprioritizing any unhealthy APIs with latency >= 1 second.
+        """
         HEALTHY_THRESHOLD = 5.0
-        while True: 
+        while True:
             healthy_queue = []
             unhealthy_queue = []
             for api in self.map_str_to_api.values(): # Default ordering
-                try: 
+                try:
                     params = {
                         "table": "rtt_summary",
                         "fields": None,
@@ -320,13 +326,13 @@ class Api_Manager:
                         "request": None,
                         "schema": schema_cache.retrieve_table_schema("rtt_summary"),
                         "token": None,
-                        "max_age": api.MAX_AGE, 
+                        "max_age": api.MAX_AGE,
                         "record_latency": True,
                     }
                     await api.get(**params)
-                    if api.latency < HEALTHY_THRESHOLD: 
+                    if api.latency < HEALTHY_THRESHOLD:
                         healthy_queue.append(api)
-                    else: 
+                    else:
                         unhealthy_queue.append(api)
                 except Exception as e:  # noqa: BLE001
                     print(f"ERROR in background task: {type(e).__name__}: {e}")
