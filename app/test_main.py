@@ -12,7 +12,7 @@ from .utils.utils_tests import generate_ago_token
 # Response validation handled by pydantic on API server itself
 # Still have to coerce FastAPI default validation errors to JSON:API spec
 GOOD_TABLES = [
-    "rtt_summary",  # Public, geometric, AGO & Carto. Large enough to crash this API.
+    "dor_parcel",  # Public, geometric, AGO & Carto. Large enough to crash this API.
     "ppd_complaints",  # Public, non-geometric, AGO & Carto,
 ]
 PRIVATE_TABLE = "city_locations_point"  # Private, geometric, AGO only
@@ -59,21 +59,21 @@ def test_all_schemas(client: TestClient):
     response = client.get("/schemas")
     assert response.status_code == 200
     data = response.json()
-    for table in GOOD_TABLES: 
+    for table in GOOD_TABLES:
         assert table in data['schemas']
 
 
-def test_docs(client: TestClient): 
+def test_docs(client: TestClient):
     response = client.get(f'{public_prefix}/docs')
     assert response.status_code == 200
 
 
-def test_docs_redirect(client: TestClient): 
+def test_docs_redirect(client: TestClient):
     response = client.get(f'{public_prefix}/')
     assert response.status_code == 200
 
 
-def test_redoc(client: TestClient): 
+def test_redoc(client: TestClient):
     response = client.get(f'{public_prefix}/redoc')
     assert response.status_code == 200
 
@@ -115,9 +115,9 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
     assert rv["links"]["self"] == response.url
     assert "********" in rv["meta"]["service_url"]
     assert rv["meta"]["databridge_api_version"]
-    if 'records_total' in rv['meta']: 
+    if 'records_total' in rv['meta']:
         assert rv["meta"]["records_total"] > 0, f"Service {service} found zero features in table {table}"
-    elif 'record_count' in rv['meta']: 
+    elif 'record_count' in rv['meta']:
         assert rv["meta"]["record_count"] > 0, f"Service {service} found zero features in table {table}"
 
 
@@ -154,7 +154,7 @@ def test_valid_fields(client: TestClient, service: str):
     for feature in data["features"]:
         assert set(feature["properties"].keys()) == set(params["fields"].split(","))
     assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
-    
+
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_valid_fields2(client: TestClient, service: str):
@@ -304,7 +304,7 @@ def test_valid_srid(client: TestClient, service: str):
 @pytest.mark.parametrize("fields", ["*", "document_id"])
 @pytest.mark.parametrize("service", ["ago", "carto", "databridge"])
 def test_valid_sql(client: TestClient, service: str, fields: str):
-    """Test that the `sql` parameter works for Carto & Databridge and that it 
+    """Test that the `sql` parameter works for Carto & Databridge and that it
     fails correctly for AGO when requesting all fields and when not requesting objectid"""
     table = GOOD_TABLES[0]
     params = {
@@ -320,7 +320,7 @@ def test_valid_sql(client: TestClient, service: str, fields: str):
     if service == 'ago':
         assert response.status_code >= 400 and response.status_code < 500
         assert rv["meta"]["databridge_api_version"]
-    else: 
+    else:
         assert response.status_code == 200
         rv = response.json()
         assert rv["meta"]["record_count"] == 5
@@ -374,7 +374,7 @@ def test_valid_timeout(client: TestClient, service: str):
 
 
 def test_valid_harmonized_timestamps(client: TestClient):
-    """Test that the data returned from the downstream APIs has the same ISO-8601 
+    """Test that the data returned from the downstream APIs has the same ISO-8601
     formatted timestamp values"""
     timestamp_dict = {
         "display_date": None,
@@ -382,7 +382,7 @@ def test_valid_harmonized_timestamps(client: TestClient):
         "recording_date": None,
         "document_date": None,
     }
-    for service in api_manager.map_str_to_api: 
+    for service in api_manager.map_str_to_api:
         params = {
             "table": GOOD_TABLES[0],
             "fields": ",".join(timestamp_dict.keys()),
@@ -394,17 +394,17 @@ def test_valid_harmonized_timestamps(client: TestClient):
         assert response.status_code == 200
         rv = response.json()
         assert rv["meta"]["databridge_api_version"]
-        for field, value in rv['data']['features'][0]['properties'].items(): 
-            if field in timestamp_dict and value: 
+        for field, value in rv['data']['features'][0]['properties'].items():
+            if field in timestamp_dict and value:
                 assert dt.datetime.fromisoformat(value)
-                if timestamp_dict[field]: 
+                if timestamp_dict[field]:
                     assert timestamp_dict[field] == value
-                else: 
+                else:
                     timestamp_dict[field] = value
 
 
-@pytest.mark.skip("""Skipping this test because these tables have differences 
-both in timestamp fields and in geometry fields that are unrelated to this API. 
+@pytest.mark.skip("""Skipping this test because these tables have differences
+both in timestamp fields and in geometry fields that are unrelated to this API.
 """)
 @pytest.mark.parametrize("table", GOOD_TABLES)
 def test_same_response(client: TestClient, table: str):
