@@ -1,3 +1,4 @@
+import datetime as dt
 import os
 import time
 
@@ -160,11 +161,14 @@ class Databridge(AbstractWorker):
                     geometry = record.pop(schema.geom_column)
                 else:
                     geometry = None
-                if field_list: # Remove any fields not requested by the user, especially objectid. 
+                if field_list: 
                     new_record = {}
                     for field, value in record.items():
-                        if field in field_list:
-                            new_record[field] = value
+                        if field in field_list: # Remove any fields not requested by the user, especially objectid. 
+                            if field in schema.timestamp_fields and value: 
+                                new_record[field] = dt.datetime.fromisoformat(value)
+                            else: 
+                                new_record[field] = value
                 else:
                     new_record = record
                 geojson = GeoJsonFeature(
@@ -191,7 +195,7 @@ class Databridge(AbstractWorker):
             return return_json
 
     def harmonize_timestamp_fields(self): 
-        """PostgREST returns ISO-8601 automatically"""        
+        """Ignored in order to not create another loop through data fields"""        
 
     async def get_postgrest_url(
         self,
