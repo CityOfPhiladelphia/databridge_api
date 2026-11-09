@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.exceptions import HTTPException
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import ValidationError
 
 from .apis.abstract import AbstractWorker
 from .utils.models import Error, Links, Meta, ReturnJson
@@ -150,7 +151,14 @@ async def get_data(
         "token": token,
     }
     if not service:
-        links = Links(self=str(request.url))
+        try: 
+            links = Links(self=str(request.url))
+        except ValidationError: 
+            raise HTTPException(
+                status_code=400, 
+                detail="URL exceeds maximum length", 
+                headers={"title": "Bad Request"}
+            )
         rv_combined = ReturnJson(links=links, errors=[], meta=Meta())
         for api in api_manager.api_priority_queue:
             try:
