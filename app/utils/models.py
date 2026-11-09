@@ -1,8 +1,13 @@
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, HttpUrl
+from pydantic import AnyUrl, BaseModel, BeforeValidator, ConfigDict, UrlConstraints
 
 from .utils_models import app_version
+
+
+class LongHttpUrl(AnyUrl):
+    """HttpUrl without its 2083 character cap, which caused HTTP 500s on long queries"""
+    _constraints = UrlConstraints(max_length=13000, allowed_schemes=['http', 'https'])
 
 
 class GeoJsonGeometry(BaseModel):
@@ -34,15 +39,15 @@ class Error(BaseModel):
 
 class Links(BaseModel, validate_assignment=True): 
     """JSON:API spec for returning URLs"""
-    self: HttpUrl = None
-    next: HttpUrl = None
+    self: LongHttpUrl = None
+    next: LongHttpUrl = None
 
 
 class Meta(BaseModel, validate_assignment=True): 
     """Additional information generated for the user"""
     databridge_api_version: str = app_version
     service: str = None
-    service_url: HttpUrl = None
+    service_url: LongHttpUrl = None
     service_available_query_parameters: list[str] = None
     record_count: int = None
     records_total: int = None

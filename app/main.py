@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .internal import internal_router
@@ -99,7 +100,10 @@ async def validation_exception_handler(
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Overwrite default FastAPI HTTP Error to return consistent with JSON:API Spec"""
-    links = Links(self=str(request.url))
+    try: 
+        links = Links(self=str(request.url))
+    except ValidationError: 
+        links = Links()
     error = Error(code=exc.status_code, title=exc.headers["title"], detail=exc.detail)
     rv = ReturnJson(links=links, errors=[error], meta=Meta())
     response = JSONResponse(
