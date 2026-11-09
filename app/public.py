@@ -190,6 +190,12 @@ async def get_data(
                 detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again",
                 headers={"title": "Request Timeout"},
             )
+        except ValidationError: 
+            raise HTTPException(
+                status_code=400, 
+                detail="URL exceeds maximum length", 
+                headers={"title": "Bad Request"}
+            )
         rv.meta.service_available_query_parameters = api_manager.map_api_to_params[api]
         return generate_final_response(rv)
 

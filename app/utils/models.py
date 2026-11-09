@@ -7,7 +7,7 @@ from .utils_models import app_version
 
 class LongHttpUrl(AnyUrl):
     """HttpUrl without its 2083 character cap, which caused HTTP 500s on long queries"""
-    _constraints = UrlConstraints(max_length=65536, allowed_schemes=['http', 'https'])
+    _constraints = UrlConstraints(max_length=13000, allowed_schemes=['http', 'https'])
 
 
 class GeoJsonGeometry(BaseModel):
