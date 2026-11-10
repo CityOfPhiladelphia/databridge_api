@@ -21,19 +21,18 @@ class Ago(AbstractWorker):
         self.organization_url = (
             "https://services.arcgis.com/fLeGjb7u4uXqeF9q/ArcGIS/rest/services/"
         )
-        self.query_url = "/FeatureServer/0/query"
+        self.query_url = ("/FeatureServer", "/query")
 
     async def get_count(
         self,
-        table: str | None,
         where: str | None,
         timeout: float,
         session: aiohttp.ClientSession,
         request: Request,
         return_json: ReturnJson,
+        url: str,
         **kwargs,
     ) -> ReturnJson:
-        url = f"{self.organization_url}{table}{self.query_url}"
         if not where:
             where = "1=1"
         params = {
@@ -96,12 +95,23 @@ class Ago(AbstractWorker):
             )
             return_json.errors = [error]
             return return_json
+        if schema.ago_layer: 
+            ago_layer = schema.ago_layer
+        else: 
+            ago_layer = '0'
+        url = f"{self.organization_url}{table}{self.query_url[0]}/{ago_layer}{self.query_url[1]}"
+
         if count_only:
             return await self.get_count(
-                table, where, timeout, session, request, return_json, **kwargs
+                table=table,
+                where=where,
+                timeout=timeout,
+                session=session,
+                request=request,
+                return_json=return_json,
+                url=url, 
+                **kwargs,
             )
-
-        url = f"{self.organization_url}{table}{self.query_url}"
         if fields:
             field_list = [field for field in fields.split(",")]
             check_fields_valid(field_list, schema.valid_fields, table)
