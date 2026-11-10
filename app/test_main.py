@@ -91,6 +91,7 @@ def test_valid(client: TestClient, service: str, table: str):
     assert rv['data']['type'] == 'FeatureCollection'
     assert rv['data']['features'][0]['type'] == 'Feature'
     assert rv['meta']['databridge_api_version']
+    assert rv['meta']['service_url']
 
 
 @pytest.mark.parametrize("count_only", [True, False])
@@ -271,6 +272,7 @@ def test_valid_count_only(client: TestClient, service: str):
     rv = response.json()
     assert rv["meta"]["records_total"] == 5
     assert rv["meta"]["databridge_api_version"]
+    assert rv['meta']['service_url']
 
 
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())

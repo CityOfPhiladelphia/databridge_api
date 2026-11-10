@@ -64,6 +64,7 @@ class Carto(AbstractWorker):
     async def normalize_rv_count(
         self, response: aiohttp.ClientResponse, return_json: ReturnJson
     ) -> ReturnJson:
+        return_json.meta.service_url = str(response.url)
         data = await response.json()
         if response.ok:
             return_json.meta.records_total = data["rows"][0]["count"]
@@ -176,6 +177,7 @@ class Carto(AbstractWorker):
         sql: str | None,
         return_json: ReturnJson
     ) -> ReturnJson:
+        return_json.meta.service_url = str(response.url)
         if int(response.headers["Content-Length"]) >= self.MAX_RESPONSE_SIZE:
             error = Error(
                 code="413",
