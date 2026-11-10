@@ -70,6 +70,7 @@ class TableField(BaseModel):
 
 class TableSchema(BaseModel):
     fields: list[TableField]
+    ago_layer: str | None = None
     valid_fields: list[str] = []
     geom_column: str | None = None
     timestamp_fields: list[str] = []
