@@ -1,11 +1,25 @@
 from asyncio import create_task
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
+from opentelemetry import baggage, context, propagate, trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.propagators import (
+    ResponsePropagator,
+    default_setter,
+    set_global_response_propagator,
+)
+from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import ValidationError
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+import yarl
 
 from .internal import internal_router
 from .public import ROOT_PATH, public_prefix, public_router
@@ -17,6 +31,75 @@ from .utils.utils import (
     session_manager,
 )
 from .utils.utils_models import app_version
+
+
+class OtelResponsePropagator(ResponsePropagator):
+    """Propagator that injects OpenTelemetry context headers (such as
+    traceparent, tracestate, baggage) and traceresponse into HTTP responses."""
+
+    def inject(
+        self,
+        carrier,
+        context: context.Context | None = None,
+        setter=default_setter,
+    ) -> None:
+        active_baggage = baggage.get_all()
+        if context is not None and active_baggage:
+            for key, value in active_baggage.items():
+                context = baggage.set_baggage(key, value, context=context)
+        propagate.inject(carrier, context=context, setter=setter)
+        span = trace.get_current_span(context)
+        span_context = span.get_span_context()
+        if span_context != trace.INVALID_SPAN_CONTEXT:
+            setter.set(
+                carrier,
+                "traceresponse",
+                f"00-{trace.format_trace_id(span_context.trace_id)}-{trace.format_span_id(span_context.span_id)}-{span_context.trace_flags:02x}",
+            )
+
+
+def sanitize_aiohttp_url(url: yarl.URL) -> str:
+    """Redact sensitive tokens from outgoing aiohttp request URLs in spans."""
+    if "token" in url.query:
+        url = url.update_query({"token": "********"})
+    return str(url)
+
+
+def setup_opentelemetry(app: FastAPI) -> None:
+    """Configure OpenTelemetry tracing, propagation, and instrumentation for
+    FastAPI and outgoing aiohttp backend requests."""
+    if isinstance(trace.get_tracer_provider(), TracerProvider):
+        return
+
+    service_name = os.getenv("OTEL_SERVICE_NAME", "databridge-api")
+    resource = Resource.create(
+        {
+            SERVICE_NAME: service_name,
+            SERVICE_VERSION: app_version,
+        }
+    )
+    tracer_provider = TracerProvider(resource=resource)
+
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv(
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    )
+    if otlp_endpoint:
+        exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+        tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+
+    trace.set_tracer_provider(tracer_provider)
+    set_global_response_propagator(OtelResponsePropagator())
+
+    AioHttpClientInstrumentor().instrument(
+        tracer_provider=tracer_provider,
+        url_filter=sanitize_aiohttp_url,
+    )
+    FastAPIInstrumentor.instrument_app(
+        app,
+        tracer_provider=tracer_provider,
+        exclude_spans=["receive", "send"],
+    )
+
 
 
 def revise_openapi_paths(): 
@@ -74,6 +157,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.include_router(internal_router)
 app.include_router(public_router)
 revise_openapi_paths()
+setup_opentelemetry(app)
 
 
 @app.exception_handler(RequestValidationError)

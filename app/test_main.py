@@ -618,3 +618,36 @@ def test_invalid_no_service(client: TestClient, service: None):
     rv = response.json()
     assert "errors" in rv
     assert rv["meta"]["databridge_api_version"]
+
+
+def test_otel_response_headers(client: TestClient):
+    """Test that OpenTelemetry trace headers are included in responses and preserve
+    incoming trace context"""
+    response = client.get(f"{public_prefix}/api_priority")
+    assert response.status_code == 200
+    assert "traceparent" in response.headers
+    assert "traceresponse" in response.headers
+
+    trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+    parent_span_id = "00f067aa0ba902b7"
+    incoming_headers = {
+        "traceparent": f"00-{trace_id}-{parent_span_id}-01",
+        "tracestate": "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7",
+        "baggage": "userId=alice",
+    }
+    response2 = client.get(f"{public_prefix}/api_priority", headers=incoming_headers)
+    assert response2.status_code == 200
+    assert response2.headers["traceparent"].startswith(f"00-{trace_id}-")
+    assert not response2.headers["traceparent"].startswith(
+        f"00-{trace_id}-{parent_span_id}"
+    )
+    assert response2.headers["tracestate"] == incoming_headers["tracestate"]
+    assert response2.headers["baggage"] == incoming_headers["baggage"]
+    assert response2.headers["traceresponse"] == response2.headers["traceparent"]
+
+    # Also verify error responses include OpenTelemetry headers
+    error_response = client.get(f"{public_prefix}/get", headers=incoming_headers)
+    assert error_response.status_code == 400
+    assert error_response.headers["traceparent"].startswith(f"00-{trace_id}-")
+    assert error_response.headers["tracestate"] == incoming_headers["tracestate"]
+

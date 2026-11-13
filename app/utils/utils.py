@@ -9,6 +9,7 @@ from enum import Enum
 import aiohttp
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.utils import suppress_http_instrumentation
 
 from ..apis.abstract import AbstractWorker
 from ..apis.ago import Ago
@@ -329,7 +330,8 @@ class Api_Manager:
                         "max_age": api.MAX_AGE,
                         "record_latency": True,
                     }
-                    await api.get(**params)
+                    with suppress_http_instrumentation():
+                        await api.get(**params)
                     if api.latency < HEALTHY_THRESHOLD:
                         healthy_queue.append(api)
                     else:
