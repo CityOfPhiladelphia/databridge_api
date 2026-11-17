@@ -9,13 +9,11 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
-from .apis.abstract import AbstractWorker
 from .utils.models import Error, Links, Meta, ReturnJson
+from .utils.models_get_data import params_get_data
 from .utils.utils import (
-    Service,
     api_manager,
     generate_final_response,
-    make_param_api_descriptions,
     schema_cache,
     session_manager,
 )
@@ -28,93 +26,9 @@ public_router = APIRouter(prefix=public_prefix, tags=["Routes"])
 
 @public_router.get("/get", response_model=ReturnJson, response_model_exclude_none=True)
 async def get_data(
+    p: Annotated[params_get_data, Query()], # All the query parameters are in the pydantic model params_get_data
     request: Request,
-    table: Annotated[
-        str | None,
-        Query(
-            description=f"""Name of table to retrieve. Either `table` or `sql`
-            parameter is required. Ignored if `sql` parameter is provided. Need an
-            example tale? Try `table=dor_parcel`.
-            {make_param_api_descriptions(api_manager, "table")}"""
-        ),
-    ] = None,
-    fields: Annotated[
-        str | None,
-        Query(
-            description=f"""List of fields to retrieve, taking the form
-            _field_1_,_field_2_,... To receive all fields, do not include this parameter.
-            Writing fields=* will return an error. Ignored if `sql` or
-            `count_only` parameters are provided.{make_param_api_descriptions(api_manager, "fields")}"""
-        ),
-    ] = None,
-    where: Annotated[
-        str | None,
-        Query(
-            description=f"""An SQL _WHERE_ clause to filter data. Ignored if
-            `sql` parameter is provided.{make_param_api_descriptions(api_manager, "where")}"""
-        ),
-    ] = None,
-    limit: Annotated[
-        int | None,
-        Query(
-            description=f"""Limit to the number of records to return. AGO enforces
-            a limit specific to each table (frequently 2,000 records); for Carto, this API
-            enforces a limit of 1,000 records as Carto otherwise does not have
-            limits. Any user-provided limit smaller than those takes precedence.
-            Ignored if `sql` or `count_only` paramaters are provided.{make_param_api_descriptions(api_manager, "limit")}"""
-        ),
-    ] = None,
-    out_sr: Annotated[
-        int,
-        Query(
-            description=f"""Spatial Reference to return geometric records in.
-            Default SRID is WGS84 (4326). Ignored if dataset is not geometric, or `sql` or `count_only`
-            parameters are provided.{make_param_api_descriptions(api_manager, "count_only")}"""
-        ),
-    ] = AbstractWorker.DEFAULT_SRID,
-    count_only: Annotated[
-        bool,
-        Query(
-            description=f"""Return record count of provided query. Ignored if
-            `sql` parameter is provided.{make_param_api_descriptions(api_manager, "count_only")}"""
-        ),
-    ] = False,
-    sql: Annotated[
-        str | None,
-        Query(
-            description=f"""Raw SQL string to use when retrieving data. Users
-            should request no more than ~2,000 rows to avoid an `HTTP 413` error.
-            Either `table` or `sql` parameter is required. Need an example? Try
-            `sql=SELECT * FROM DOR_PARCEL LIMIT 10`.{make_param_api_descriptions(api_manager, "sql")}"""
-        ),
-    ] = None,
-    service: Annotated[
-        Service | None,
-        Query(
-            description="""Name of API service to use. If not provided, the first
-            API service to locate the table will be used. Ignored if `sql` parameter
-            is provided."""
-        ),
-    ] = None,
-    timeout: Annotated[
-        float,
-        Query(
-            description="""Amount of time in seconds to wait for response from downstream APIs
-            before raising a timeout error""",
-            gt=0,
-            lt=300,
-        ),
-    ] = 30,
-    max_age: Annotated[
-        int,
-        Query(
-            description=f"""Request fresh results if cached results are older than _max_age_ in seconds. 0 means request fresh results only, but a request will take longer and demand more server resources to complete. 31,536,000 seconds equals 365 days (default). Use this parameter if you are concerned that table data is incorrect.
-            {make_param_api_descriptions(api_manager, "max_age")}""",
-            ge=0,
-            le=31536000,
-        ),
-    ] = AbstractWorker.MAX_AGE,
-    session: aiohttp.ClientSession = Depends(session_manager), # Same session for all user requests  # noqa: B008
+    session: aiohttp.ClientSession = Depends(session_manager),  # Same session for all user requests
 ) -> ReturnJson | JSONResponse:
     """Use this endpoint to retrieve data from the available
     services. At a minimum either the `table` or `sql` parameter is required.
@@ -124,33 +38,35 @@ async def get_data(
         token = request.headers["authorization"]
     else:
         token = None
-    if not table and not sql:
+    if not p.table and not p.sql:
         raise HTTPException(
             status_code=400,
             detail="'table' or 'sql' parameters are required",
             headers={"title": "Bad Request"},
         )
-    if table and not sql: 
-        table = table.lower()
-        schema = schema_cache.retrieve_table_schema(table)
+    if p.table and not p.sql: 
+        p.table = p.table.lower()
+        schema = schema_cache.retrieve_table_schema(p.table)
     else: 
         schema = None
     params = {
-        "table": table,
-        "fields": fields,
-        "where": where,
-        "limit": limit,
-        "out_sr": out_sr,
-        "count_only": count_only,
-        "sql": sql,
-        "session": session,
-        "timeout": timeout,
-        "max_age": max_age,
+        "table": p.table,
+        "fields": p.fields,
+        "where": p.where,
+        "limit": p.limit,
+        "out_sr": p.out_sr,
+        "x": p.x, 
+        "y": p.y, 
+        "count_only": p.count_only,
+        "sql": p.sql,
+        "timeout": p.timeout,
+        "max_age": p.max_age,
         "request": request,
+        "session": session,
         "schema": schema,
         "token": token,
     }
-    if not service:
+    if not p.service:
         try: 
             links = Links(self=str(request.url))
         except ValidationError: 
@@ -161,27 +77,43 @@ async def get_data(
             )
         rv_combined = ReturnJson(links=links, errors=[], meta=Meta())
         for api in api_manager.api_priority_queue:
-            try:
-                rv = await api.get(**params)
-            except TimeoutError:  # noqa: UP041
-                api_manager.deprioritize(api)
+            invalid_params = api_manager.check_params(api, params)
+            if invalid_params: 
                 error = Error(
-                    code=408,
-                    title=f"{api.name} Timeout Error",
-                    detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
+                    code=400,
+                    title=f"{api.name} Bad Request",
+                    detail=f"{api.name} received invalid parameters: {invalid_params}",
                 )
                 rv_combined.errors.append(error)
-            else:
-                if not rv.errors:
-                    rv.meta.service_available_query_parameters = (
-                        api_manager.map_api_to_params[api]
+            else: 
+                try:
+                    rv = await api.get(**params)
+                except TimeoutError:  # noqa: UP041
+                    api_manager.deprioritize(api)
+                    error = Error(
+                        code=408,
+                        title=f"{api.name} Timeout Error",
+                        detail="Request could not be completed. Request less data, preferably 2,000 rows or fewer, or alternatively try again.",
                     )
-                    return rv
+                    rv_combined.errors.append(error)
                 else:
-                    rv_combined.errors.append(rv.errors[0])
+                    if not rv.errors:
+                        rv.meta.service_available_query_parameters = (
+                            api_manager.map_api_to_params[api]
+                        )
+                        return rv
+                    else:
+                        rv_combined.errors.append(rv.errors[0])
         return generate_final_response(rv_combined)
     else:
-        api = api_manager.map_str_to_api[service.lower()]
+        api = api_manager.map_str_to_api[p.service.lower()]
+        invalid_params = api_manager.check_params(api, params)
+        if invalid_params: 
+            raise HTTPException(
+                status_code=400,
+                detail=f"{api.name} received invalid parameters: {invalid_params}",
+                headers={"title": "Bad Request"},
+            )
         try:
             rv = await api.get(**params)
         except TimeoutError:  # noqa: UP041

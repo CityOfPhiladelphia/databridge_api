@@ -30,6 +30,7 @@ class Ago(AbstractWorker):
         session: aiohttp.ClientSession,
         request: Request,
         return_json: ReturnJson,
+        token: str | None,
         url: str,
         **kwargs,
     ) -> ReturnJson:
@@ -40,8 +41,8 @@ class Ago(AbstractWorker):
             "returnCountOnly": "true",
             "f": "geojson",
         }
-        if kwargs["token"]:
-            params["token"] = kwargs["token"].removeprefix("Bearer ")
+        if token:
+            params["token"] = token.removeprefix("Bearer ")
         async with session.get(url, params=params, timeout=timeout) as response:
             return await self.normalize_rv_count(request, response, return_json)
 
@@ -77,6 +78,7 @@ class Ago(AbstractWorker):
         session: aiohttp.ClientSession,
         request: Request | None, # None when it's not the user making the request but the Latency Checker
         schema: TableSchema, 
+        token: str | None, 
         record_latency: bool = False, 
         **kwargs,
     ) -> ReturnJson:
@@ -109,6 +111,7 @@ class Ago(AbstractWorker):
                 session=session,
                 request=request,
                 return_json=return_json,
+                token=token, 
                 url=url, 
                 **kwargs,
             )
@@ -130,8 +133,8 @@ class Ago(AbstractWorker):
         }
         if limit:
             params["resultRecordCount"] = limit
-        if kwargs["token"]:
-            params["token"] = kwargs["token"].removeprefix("Bearer ")
+        if token:
+            params["token"] = token.removeprefix("Bearer ")
         if record_latency: 
             start_time = time.perf_counter()
         async with session.get(url, params=params, timeout=timeout) as response:
