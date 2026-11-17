@@ -11,7 +11,7 @@ from fastapi.exceptions import HTTPException
 
 from ..utils.models import Error, GeoJsonFeature, ReturnJson, TableSchema
 
-NON_USER_API_PARAMS = ("session", "kwargs", "request", "schema")
+NON_USER_API_PARAMS = ("session", "kwargs", "request", "schema", "record_latency")
 
 class AbstractWorker(ABC):
     """Abstract base class to ensure worker classes are properly implemented
@@ -21,7 +21,6 @@ class AbstractWorker(ABC):
     MAX_RESPONSE_SIZE = (
         1 * 1024 * 1024
     )  # 1MB response limit to not crash user systems (1MB of data is expanding to 10MB response, which is upper limit of what Chrome browser & Postman can handle)
-    MAX_AGE = 31536000  # One year in seconds - used only by Carto but likely overwritten by default Carto infrastructure configuration
     DEFAULT_SRID = 4326
     max_records = 1000
 
@@ -146,6 +145,7 @@ class AbstractWorker(ABC):
         self.latency = elapsed_time
         self.latency_as_of = dt.datetime.now(dt.UTC)
         print(f"API Latency: {self.name} - {self.latency:.4f} seconds - Measured at: {self.latency_as_of.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 def check_fields_valid(field_list: list[str], valid_fields: list[str], table: str):
     """Check that the fields requested are valid

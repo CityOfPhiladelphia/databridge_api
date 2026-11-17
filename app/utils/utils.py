@@ -10,7 +10,7 @@ import aiohttp
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 
-from ..apis.abstract import AbstractWorker
+from ..apis.abstract import NON_USER_API_PARAMS, AbstractWorker
 from ..apis.ago import Ago
 from ..apis.carto import Carto
 from ..apis.databridge import Databridge
@@ -118,11 +118,8 @@ class SchemaCache:
                     f"Two separate tables have the same name: {table}"
                 )
                 replacement_cache[table] = table_schema
-            elif os.path.isdir(new_path):
-                if not file.startswith("."):  # Ignore .venv, .git, etc.
-                    replacement_cache = self.search_recursively(
-                        new_path, replacement_cache
-                    )
+            elif os.path.isdir(new_path) and not file.startswith("."):  # Ignore .venv, .git, etc.
+                replacement_cache = self.search_recursively(new_path, replacement_cache)
         return replacement_cache
 
     def return_table_schema(self, path: str) -> tuple[str, TableSchema]:
@@ -289,6 +286,15 @@ class Api_Manager:
             self.api_priority_queue.append(api)
             self.map_api_to_params[api] = api.determine_function_params(api.get)
 
+    def check_params(self, api: AbstractWorker, params: dict) -> list[str]:
+        invalid_params = []
+        valid_params = self.map_api_to_params[api]
+            
+        for param, value in params.items(): 
+            if value and param not in valid_params and param not in NON_USER_API_PARAMS: 
+                invalid_params.append(param)
+        return invalid_params
+    
     def deprioritize(self, api: AbstractWorker):
         """Deprioritize an API by changing its position to last in priority queue
         order. This is intended to only be called when a user did not specify the
@@ -320,13 +326,15 @@ class Api_Manager:
                         "limit": 1,
                         "count_only": False,
                         "out_sr": AbstractWorker.DEFAULT_SRID,
+                        "x": None,
+                        "y": None,
                         "sql": None,
                         "session": session_manager(),
                         "timeout": 5,
                         "request": None,
                         "schema": schema_cache.retrieve_table_schema("rtt_summary"),
                         "token": None,
-                        "max_age": api.MAX_AGE,
+                        "max_age": None,
                         "record_latency": True,
                     }
                     await api.get(**params)

@@ -26,6 +26,7 @@ class Carto(AbstractWorker):
             "https://gcp-us-east1.api.carto.com/v3/sql/databridge-public-ro/query"
         )
         self.max_records = 1000
+        self.max_age = 31536000  # One year in seconds - likely overwritten by default Carto infrastructure configuration
         self.public_token = os.environ.get(
             "CARTO_TOKEN"
         )  # token passed in at runtime as env variable. Available at Keeper record "CARTO - New Platform"
@@ -89,12 +90,12 @@ class Carto(AbstractWorker):
         out_sr: int | None,
         sql: str | None,
         timeout: float,
-        max_age: int,
+        max_age: int | None,
         session: aiohttp.ClientSession,
-        request: Request | None,
+        request: Request | None, # None when it's not the user making the request but the Latency Checker
         schema: TableSchema | None,
-        record_latency: bool = False, 
-        **kwargs,
+        record_latency: bool = False,
+        **kwargs,  # Needed to prevent TypeErrors
     ) -> ReturnJson:
         # These queries on their own are unsafe, but we are relying on the safety
         # checks of the back-end APIs
@@ -104,7 +105,9 @@ class Carto(AbstractWorker):
             links = Links()
         meta = Meta(service=self.name)
         return_json = ReturnJson(links=links, meta=meta)
-    
+
+        if not max_age: 
+            max_age = self.max_age
         if count_only:
             return await self.get_count(
                 table, where, timeout, max_age, session, return_json
