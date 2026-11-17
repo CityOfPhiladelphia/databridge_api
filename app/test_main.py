@@ -646,6 +646,7 @@ def test_invalid_params(client: TestClient, service: str):
     assert rv["meta"]["databridge_api_version"]
 
 
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_invalid_xy(client: TestClient, service: str):
     """Test providing only one of `x` or `y` parameters fails"""
     params = {
