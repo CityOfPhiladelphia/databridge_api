@@ -709,6 +709,51 @@ def test_otel_parent_based_sampling(client: TestClient):
         exporter.shutdown()
 
 
+def test_otel_upstream_service_attribute():
+    """Test that outgoing upstream URLs map to the expected peer.service attribute"""
+    from types import SimpleNamespace
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON
+
+    from .main import aiohttp_request_hook, get_upstream_service
+
+    databridge_api = api_manager.map_str_to_api["databridge"]
+    carto_api = api_manager.map_str_to_api["carto"]
+    ago_api = api_manager.map_str_to_api["ago"]
+
+    cases = [
+        (f"{databridge_api.rpc_url}/dor_parcel?limit=1", "postgrest-public"),
+        (f"{databridge_api.db_url}/dor_parcel", "postgrest-public"),
+        (f"{databridge_api.sql_to_postgrest_url}?sql=SELECT+1", "sql-to-postgrest"),
+        (f"{carto_api.base_url}?q=SELECT+1", "carto"),
+        (f"{ago_api.organization_url}dor_parcel/FeatureServer/0/query", "ago"),
+        ("https://example.com/other", None),
+    ]
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(sampler=ALWAYS_ON)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer(__name__)
+
+    for url, expected in cases:
+        assert get_upstream_service(url) == expected
+        exporter.clear()
+        with tracer.start_as_current_span("GET") as span:
+            aiohttp_request_hook(span, SimpleNamespace(url=url))
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        if expected is not None:
+            assert spans[0].attributes.get("peer.service") == expected
+        else:
+            assert "peer.service" not in spans[0].attributes
+
+
+
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_invalid_params(client: TestClient, service: str):
     """Test that passing an unused parameter will fail"""

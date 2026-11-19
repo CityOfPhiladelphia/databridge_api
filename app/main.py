@@ -66,6 +66,31 @@ def sanitize_aiohttp_url(url: yarl.URL) -> str:
     return str(url)
 
 
+def get_upstream_service(url: str) -> str | None:
+    """Map an outgoing request URL to a logical upstream service name."""
+    databridge_api = api_manager.map_str_to_api["databridge"]
+    carto_api = api_manager.map_str_to_api["carto"]
+    ago_api = api_manager.map_str_to_api["ago"]
+
+    if url.startswith(databridge_api.db_url):
+        return "postgrest-public"
+    if url.startswith(databridge_api.sql_to_postgrest_url):
+        return "sql-to-postgrest"
+    if url.startswith(carto_api.base_url):
+        return "carto"
+    if url.startswith(ago_api.organization_url):
+        return "ago"
+    return None
+
+
+def aiohttp_request_hook(span: trace.Span, params) -> None:
+    """Tag outgoing aiohttp client spans with the upstream service name."""
+    if span and span.is_recording():
+        upstream = get_upstream_service(str(params.url))
+        if upstream:
+            span.set_attribute("peer.service", upstream)
+
+
 def setup_opentelemetry(app: FastAPI) -> None:
     """Configure OpenTelemetry tracing, propagation, and instrumentation for
     FastAPI and outgoing aiohttp backend requests."""
@@ -95,6 +120,7 @@ def setup_opentelemetry(app: FastAPI) -> None:
     AioHttpClientInstrumentor().instrument(
         tracer_provider=tracer_provider,
         url_filter=sanitize_aiohttp_url,
+        request_hook=aiohttp_request_hook,
     )
     FastAPIInstrumentor.instrument_app(
         app,
