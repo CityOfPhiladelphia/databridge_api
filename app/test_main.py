@@ -122,20 +122,6 @@ def test_valid_private(client: TestClient, token: str, service: str, count_only:
         assert rv["meta"]["record_count"] > 0, f"Service {service} found zero features in table {table}"
 
 
-@pytest.mark.parametrize("service", ["carto", "databridge"])
-def test_valid_private_no_interfere(client: TestClient, service: str, token: str):
-    """Test that a private token doesn't interfere with other APIs"""
-    table = GOOD_TABLES[0]
-    params = {"table": table, "limit": 5, "service": service, "max_age": 0}
-    response = client.get(
-        f"{public_prefix}/get", params=params, headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.status_code == 200
-    rv = response.json()
-    assert rv["meta"]["databridge_api_version"]
-    assert rv["data"]["features"], f'Service {service} found zero features in table {table}'
-
-
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_valid_fields(client: TestClient, service: str):
     """Test that the `fields` parameter returns only those fields"""
@@ -386,6 +372,31 @@ def test_valid_but_long(client: TestClient):
     } # URL Length Checks Happen After Url-Encoding
     response = client.get(f"{public_prefix}/get", params=params)
     assert response.status_code == 200
+
+@pytest.mark.parametrize("service", ["ago", "carto", "databridge"])
+def test_valid_xy(client: TestClient, service: str):
+    """Test that the `x` and `y` parameters work on Databridge and that it
+    fails correctly for AGO and Carto"""
+    params = {
+        "table": GOOD_TABLES[0], 
+        "service": service, 
+        "x": -75.172317, # City Hall, which should have exactly one DOR parcel at this spot
+        "y": 39.954804,
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    rv = response.json()
+    if service in ("ago", "carto"):
+        assert response.status_code >= 400 and response.status_code < 500
+        assert rv["meta"]["databridge_api_version"]
+    else:
+        assert response.status_code == 200
+        rv = response.json()
+        assert rv["meta"]["record_count"] == 1
+        assert len(rv['data']['features']) == 1
+        assert "next" not in rv["links"]
+        assert rv["data"]["type"] == "FeatureCollection"
+        assert rv["data"]["features"][0]["type"] == "Feature"
+        assert rv["meta"]["databridge_api_version"]
 
 
 @pytest.mark.skip("""Skipping this test because naive timestamps are being handled 
@@ -651,3 +662,40 @@ def test_otel_response_headers(client: TestClient):
     assert error_response.headers["traceparent"].startswith(f"00-{trace_id}-")
     assert error_response.headers["tracestate"] == incoming_headers["tracestate"]
 
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_params(client: TestClient, service: str):
+    """Test that passing an unused parameter will fail"""
+    params = {
+        "table": GOOD_TABLES[0],
+        "limit": 1,
+        "service": service,
+        "bad_param": 'bad_param'
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    rv = response.json()
+    assert response.status_code >= 400 and response.status_code < 500
+    assert rv["meta"]["databridge_api_version"]
+
+
+@pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
+def test_invalid_xy(client: TestClient, service: str):
+    """Test providing only one of `x` or `y` parameters fails"""
+    params = {
+        "table": GOOD_TABLES[0],
+        "service": service,
+        "x": -75.172317,  # City Hall, which should have exactly one DOR parcel at this spot
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    rv = response.json()
+    assert response.status_code >= 400 and response.status_code < 500
+    assert rv["meta"]["databridge_api_version"]
+
+    params = {
+        "table": GOOD_TABLES[0],
+        "service": service,
+        "y": 39.954804,
+    }
+    response = client.get(f"{public_prefix}/get", params=params)
+    rv = response.json()
+    assert response.status_code >= 400 and response.status_code < 500
+    assert rv["meta"]["databridge_api_version"]

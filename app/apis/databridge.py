@@ -82,13 +82,15 @@ class Databridge(AbstractWorker):
         limit: int | None,
         count_only: bool,
         out_sr: int | None,
+        x: float | None,
+        y: float | None,
         sql: str | None,
         timeout: float,
         session: aiohttp.ClientSession,
-        request: Request | None,
-        schema: TableSchema, 
-        record_latency: bool = False, 
-        **kwargs,
+        request: Request | None, # None when it's not the user making the request but the Latency Checker
+        schema: TableSchema,
+        record_latency: bool = False,
+        **kwargs,  # Needed to prevent TypeErrors
     ) -> ReturnJson | None:
         if request: 
             links = Links(self=str(request.url))
@@ -109,6 +111,18 @@ class Databridge(AbstractWorker):
             generated_sql = self.generate_sql(table, fields, where, limit, schema, count_only=False)
             if schema.geom_column: 
                 params['out_sr'] = out_sr if out_sr else self.DEFAULT_SRID
+                if x or y: 
+                    if not (x and y):
+                        error = Error(
+                            code=400,
+                            title="Bad Request",
+                            detail='Both X and Y are required',
+                        )
+                        return_json.errors = [error]
+                        return return_json
+                    else: 
+                        params['x'] = x
+                        params['y'] = y
         else: 
             generated_sql = sql
         translator_rv = await self.get_postgrest_url(
