@@ -631,6 +631,129 @@ def test_invalid_no_service(client: TestClient, service: None):
     assert rv["meta"]["databridge_api_version"]
 
 
+def test_otel_response_headers(client: TestClient):
+    """Test that OpenTelemetry trace headers are included in responses and preserve
+    incoming trace context"""
+    response = client.get(f"{public_prefix}/api_priority")
+    assert response.status_code == 200
+    assert "traceparent" in response.headers
+    assert "traceresponse" in response.headers
+
+    trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+    parent_span_id = "00f067aa0ba902b7"
+    incoming_headers = {
+        "traceparent": f"00-{trace_id}-{parent_span_id}-01",
+        "tracestate": "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7",
+        "baggage": "userId=alice",
+    }
+    response2 = client.get(f"{public_prefix}/api_priority", headers=incoming_headers)
+    assert response2.status_code == 200
+    assert response2.headers["traceparent"].startswith(f"00-{trace_id}-")
+    assert not response2.headers["traceparent"].startswith(
+        f"00-{trace_id}-{parent_span_id}"
+    )
+    assert response2.headers["tracestate"] == incoming_headers["tracestate"]
+    assert response2.headers["baggage"] == incoming_headers["baggage"]
+    assert response2.headers["traceresponse"] == response2.headers["traceparent"]
+
+    # Also verify error responses include OpenTelemetry headers
+    error_response = client.get(f"{public_prefix}/get", headers=incoming_headers)
+    assert error_response.status_code == 400
+    assert error_response.headers["traceparent"].startswith(f"00-{trace_id}-")
+    assert error_response.headers["tracestate"] == incoming_headers["tracestate"]
+
+
+def test_otel_parent_based_sampling(client: TestClient):
+    """Test that spans are only exported when the incoming parent trace is sampled"""
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    processor = SimpleSpanProcessor(exporter)
+    tracer_provider = trace.get_tracer_provider()
+    tracer_provider.add_span_processor(processor)
+
+    try:
+        # 1. No incoming traceparent -> not sampled / not exported
+        exporter.clear()
+        response = client.get(f"{public_prefix}/api_priority")
+        assert response.status_code == 200
+        assert exporter.get_finished_spans() == ()
+
+        # 2. Unsampled incoming traceparent (flag 00) -> not sampled / not exported
+        trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+        parent_span_id = "00f067aa0ba902b7"
+        exporter.clear()
+        response = client.get(
+            f"{public_prefix}/api_priority",
+            headers={"traceparent": f"00-{trace_id}-{parent_span_id}-00"},
+        )
+        assert response.status_code == 200
+        assert exporter.get_finished_spans() == ()
+
+        # 3. Sampled incoming traceparent (flag 01) -> sampled & exported
+        exporter.clear()
+        response = client.get(
+            f"{public_prefix}/api_priority",
+            headers={"traceparent": f"00-{trace_id}-{parent_span_id}-01"},
+        )
+        assert response.status_code == 200
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert f"{spans[0].context.trace_id:032x}" == trace_id
+        assert f"{spans[0].parent.span_id:016x}" == parent_span_id
+    finally:
+        exporter.shutdown()
+
+
+def test_otel_upstream_service_attribute():
+    """Test that outgoing upstream URLs map to the expected peer.service attribute"""
+    from types import SimpleNamespace
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON
+
+    from .main import aiohttp_request_hook, get_upstream_service
+
+    databridge_api = api_manager.map_str_to_api["databridge"]
+    carto_api = api_manager.map_str_to_api["carto"]
+    ago_api = api_manager.map_str_to_api["ago"]
+
+    cases = [
+        (f"{databridge_api.rpc_url}/dor_parcel?limit=1", "postgrest-public"),
+        (f"{databridge_api.db_url}/dor_parcel", "postgrest-public"),
+        (f"{databridge_api.sql_to_postgrest_url}?sql=SELECT+1", "sql-to-postgrest"),
+        (f"{carto_api.base_url}?q=SELECT+1", "carto"),
+        (f"{ago_api.organization_url}dor_parcel/FeatureServer/0/query", "ago"),
+        ("https://example.com/other", None),
+    ]
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(sampler=ALWAYS_ON)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer(__name__)
+
+    for url, expected in cases:
+        assert get_upstream_service(url) == expected
+        exporter.clear()
+        with tracer.start_as_current_span("GET") as span:
+            aiohttp_request_hook(span, SimpleNamespace(url=url))
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        if expected is not None:
+            assert spans[0].attributes.get("peer.service") == expected
+        else:
+            assert "peer.service" not in spans[0].attributes
+
+
+
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_invalid_params(client: TestClient, service: str):
     """Test that passing an unused parameter will fail"""
