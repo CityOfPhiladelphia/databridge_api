@@ -662,6 +662,53 @@ def test_otel_response_headers(client: TestClient):
     assert error_response.headers["traceparent"].startswith(f"00-{trace_id}-")
     assert error_response.headers["tracestate"] == incoming_headers["tracestate"]
 
+
+def test_otel_parent_based_sampling(client: TestClient):
+    """Test that spans are only exported when the incoming parent trace is sampled"""
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    processor = SimpleSpanProcessor(exporter)
+    tracer_provider = trace.get_tracer_provider()
+    tracer_provider.add_span_processor(processor)
+
+    try:
+        # 1. No incoming traceparent -> not sampled / not exported
+        exporter.clear()
+        response = client.get(f"{public_prefix}/api_priority")
+        assert response.status_code == 200
+        assert exporter.get_finished_spans() == ()
+
+        # 2. Unsampled incoming traceparent (flag 00) -> not sampled / not exported
+        trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+        parent_span_id = "00f067aa0ba902b7"
+        exporter.clear()
+        response = client.get(
+            f"{public_prefix}/api_priority",
+            headers={"traceparent": f"00-{trace_id}-{parent_span_id}-00"},
+        )
+        assert response.status_code == 200
+        assert exporter.get_finished_spans() == ()
+
+        # 3. Sampled incoming traceparent (flag 01) -> sampled & exported
+        exporter.clear()
+        response = client.get(
+            f"{public_prefix}/api_priority",
+            headers={"traceparent": f"00-{trace_id}-{parent_span_id}-01"},
+        )
+        assert response.status_code == 200
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert f"{spans[0].context.trace_id:032x}" == trace_id
+        assert f"{spans[0].parent.span_id:016x}" == parent_span_id
+    finally:
+        exporter.shutdown()
+
+
 @pytest.mark.parametrize("service", api_manager.map_str_to_api.keys())
 def test_invalid_params(client: TestClient, service: str):
     """Test that passing an unused parameter will fail"""

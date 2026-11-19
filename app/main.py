@@ -17,6 +17,7 @@ from opentelemetry.instrumentation.propagators import (
 from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ParentBased
 from pydantic import ValidationError
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import yarl
@@ -78,7 +79,8 @@ def setup_opentelemetry(app: FastAPI) -> None:
             SERVICE_VERSION: app_version,
         }
     )
-    tracer_provider = TracerProvider(resource=resource)
+    sampler = None if os.getenv("OTEL_TRACES_SAMPLER") else ParentBased(root=ALWAYS_OFF)
+    tracer_provider = TracerProvider(resource=resource, sampler=sampler)
 
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv(
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
